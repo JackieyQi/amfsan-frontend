@@ -4,9 +4,7 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   // 确保静态文件正确复制
-  experimental: {
-    outputFileTracingRoot: process.cwd(),
-  },
+  outputFileTracingRoot: process.cwd(),
   async rewrites() {
     return [
       {
