@@ -1,7 +1,6 @@
 import config from "./config";
 import { getAuthToken } from "./api-utils";
 
-// 回测记录类型
 export interface BacktestRecord {
   id: string;
   symbol: string;

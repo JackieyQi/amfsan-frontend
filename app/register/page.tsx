@@ -199,9 +199,11 @@ export default function RegisterPage() {
               <Input
                 id="inviteCode"
                 type="text"
-                placeholder="请输入邀请码（选填）"
+                placeholder="请输入邀请码"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.trim())} // 去除空格
+                required
+                maxLength={6} // 限制长度
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>

@@ -214,7 +214,7 @@ export default function HomePage() {
             onClick={() => router.push("/backtest")}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            策略回测
+            策略实盘
           </Button>
         </div>
 

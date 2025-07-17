@@ -172,7 +172,7 @@ export default function BacktestPage() {
     <div className="flex flex-col items-center min-h-screen bg-gray-50 p-4">
       <div className="w-full max-w-6xl">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">策略回测结果</h1>
+          <h1 className="text-2xl font-bold">策略实盘数据</h1>
           <Button variant="outline" onClick={() => router.push("/home")}>
             返回首页
           </Button>
@@ -220,7 +220,7 @@ export default function BacktestPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>回测记录</CardTitle>
+            <CardTitle>实盘记录</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
