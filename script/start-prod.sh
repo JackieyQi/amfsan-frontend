@@ -12,11 +12,9 @@ if [ ! -d "$STANDALONE_DIR" ]; then
 fi
 
 # 确保静态文件存在
-if [ ! -d "$STANDALONE_DIR/.next/static" ]; then
-    echo "复制静态文件到 standalone 目录..."
-    mkdir -p "$STANDALONE_DIR/.next"
-    cp -r "$PROJECT_DIR/.next/static" "$STANDALONE_DIR/.next/"
-fi
+echo "复制静态文件到 standalone 目录..."
+sudo mkdir -p "$STANDALONE_DIR/.next"
+sudo cp -r "$PROJECT_DIR/.next/static" "$STANDALONE_DIR/.next/"
 
 # 检查是否已有进程在运行
 if pgrep -f "node.*server.js" > /dev/null; then
