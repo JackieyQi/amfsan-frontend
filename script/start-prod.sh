@@ -11,10 +11,17 @@ if [ ! -d "$STANDALONE_DIR" ]; then
     exit 1
 fi
 
+# npm run build
+
 # 确保静态文件存在
 echo "复制静态文件到 standalone 目录..."
-sudo mkdir -p "$STANDALONE_DIR/.next"
-sudo cp -r "$PROJECT_DIR/.next/static" "$STANDALONE_DIR/.next/"
+if [ ! -d "$STANDALONE_DIR/.next" ]; then
+    echo "standalone 目录不存在，请先运行 npm run build"
+    exit 1
+fi
+
+mkdir -p "$STANDALONE_DIR/.next"
+cp -r "$PROJECT_DIR/.next/static" "$STANDALONE_DIR/.next/"
 
 # 检查是否已有进程在运行
 if pgrep -f "node.*server.js" > /dev/null; then
