@@ -13,6 +13,9 @@ import {
   logoutUser,
   isLoggedIn,
   getMarketSymbols,
+  getCandidateSymbols,
+  getCandidateTopPriceNoticeSetting,
+  updateCandidateTopPriceNoticeSetting,
   addMarketSymbol,
   deleteMarketSymbol,
   type UserDetails,
@@ -35,9 +38,25 @@ export default function HomePage() {
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [symbols, setSymbols] = useState<SymbolData[]>([]);
+  const [candidateSymbols, setCandidateSymbols] = useState<SymbolData[]>([]);
+  const [candidateFilter, setCandidateFilter] = useState("");
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
+  const [candidateTopPriceNoticeEnabled, setCandidateTopPriceNoticeEnabled] =
+    useState(false);
+  const [
+    isLoadingCandidateTopPriceNotice,
+    setIsLoadingCandidateTopPriceNotice,
+  ] = useState(false);
+  const [
+    isUpdatingCandidateTopPriceNotice,
+    setIsUpdatingCandidateTopPriceNotice,
+  ] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
   const [isAddingSymbol, setIsAddingSymbol] = useState(false);
   const [isDeletingSymbol, setIsDeletingSymbol] = useState<
+    Record<string, boolean>
+  >({});
+  const [isAddingCandidateSymbol, setIsAddingCandidateSymbol] = useState<
     Record<string, boolean>
   >({});
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -72,10 +91,14 @@ export default function HomePage() {
       }
     }
 
-    // 获取用户详细信息和市场符号
-    // Promise.all([fetchUserDetails(), fetchMarketSymbols()])
-    Promise.all([fetchMarketSymbols()])
-      .then(() => console.log("成功获取用户详情和市场符号"))
+    // 获取用户详细信息、当前监控列表、候选币种和候选通知开关
+    // Promise.all([fetchUserDetails(), fetchMarketSymbols(), fetchCandidateSymbols(), fetchCandidateTopPriceNoticeSetting()])
+    Promise.all([
+      fetchMarketSymbols(),
+      fetchCandidateSymbols(),
+      fetchCandidateTopPriceNoticeSetting(),
+    ])
+      .then(() => console.log("成功获取用户详情、监控列表、候选币种和候选通知开关"))
       .catch((err) => console.error("获取数据失败", err))
       .finally(() => setIsLoading(false));
   }, [router]);
@@ -110,9 +133,41 @@ export default function HomePage() {
       setSymbols(data);
       return data;
     } catch (error) {
-      console.error("获取市场符号失败:", error);
-      toast.error("获取市场符号失败");
+      console.error("获取当前监控列表失败:", error);
+      toast.error("获取当前监控列表失败");
       return [];
+    }
+  };
+
+  const fetchCandidateSymbols = async () => {
+    setIsLoadingCandidates(true);
+
+    try {
+      const data = await getCandidateSymbols();
+      setCandidateSymbols(data);
+      return data;
+    } catch (error) {
+      console.error("获取候选币种失败:", error);
+      toast.error("获取候选币种失败，请确认当前账号有 admin 权限");
+      return [];
+    } finally {
+      setIsLoadingCandidates(false);
+    }
+  };
+
+  const fetchCandidateTopPriceNoticeSetting = async () => {
+    setIsLoadingCandidateTopPriceNotice(true);
+
+    try {
+      const data = await getCandidateTopPriceNoticeSetting();
+      setCandidateTopPriceNoticeEnabled(data.enabled);
+      return data;
+    } catch (error) {
+      console.error("获取候选新高邮件开关失败:", error);
+      toast.error("获取候选新高邮件开关失败，请确认当前账号有 admin 权限");
+      return { enabled: false };
+    } finally {
+      setIsLoadingCandidateTopPriceNotice(false);
     }
   };
 
@@ -120,7 +175,7 @@ export default function HomePage() {
     e.preventDefault();
 
     if (!newSymbol.trim()) {
-      toast.error("请输入有效的符号");
+      toast.error("请输入有效的币种");
       return;
     }
 
@@ -129,7 +184,7 @@ export default function HomePage() {
     try {
       // 恢复实际API调用
       await addMarketSymbol(newSymbol.trim());
-      toast.success(`成功添加符号: ${newSymbol}`);
+      toast.success(`已加入监控列表: ${newSymbol}`);
       setNewSymbol("");
       // 重新获取符号列表
       fetchMarketSymbols();
@@ -140,13 +195,44 @@ export default function HomePage() {
     }
   };
 
+  const handleAddCandidateSymbol = async (symbol: string) => {
+    setIsAddingCandidateSymbol((prev) => ({ ...prev, [symbol]: true }));
+
+    try {
+      await addMarketSymbol(symbol);
+      toast.success(`已加入监控列表: ${symbol}`);
+      await fetchMarketSymbols();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加入监控失败");
+    } finally {
+      setIsAddingCandidateSymbol((prev) => ({ ...prev, [symbol]: false }));
+    }
+  };
+
+  const handleToggleCandidateTopPriceNotice = async () => {
+    const nextEnabled = !candidateTopPriceNoticeEnabled;
+    setIsUpdatingCandidateTopPriceNotice(true);
+
+    try {
+      const data = await updateCandidateTopPriceNoticeSetting(nextEnabled);
+      setCandidateTopPriceNoticeEnabled(data.enabled);
+      toast.success(data.enabled ? "已开启候选新高邮件" : "已关闭候选新高邮件");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "更新候选新高邮件开关失败"
+      );
+    } finally {
+      setIsUpdatingCandidateTopPriceNotice(false);
+    }
+  };
+
   const handleDeleteSymbol = async (symbol: string) => {
     setIsDeletingSymbol((prev) => ({ ...prev, [symbol]: true }));
 
     try {
       // 恢复实际API调用
       const response = await deleteMarketSymbol(symbol);
-      // toast.success(`成功删除符号: ${symbol}`);
+      // toast.success(`已移出监控列表: ${symbol}`);
 
       setDialogResponse({
         symbol,
@@ -155,14 +241,14 @@ export default function HomePage() {
       });
       setDialogOpen(true);
 
-      // 更新本地状态，移除已删除的符号
+      // 更新本地状态，移出监控列表
       setSymbols((prev) => prev.filter((item) => item.symbol !== symbol));
     } catch (error) {
-      // toast.error(error instanceof Error ? error.message : "删除符号失败");
+      // toast.error(error instanceof Error ? error.message : "移除监控失败");
       // 显示错误响应弹框
       setDialogResponse({
         symbol,
-        error: error instanceof Error ? error.message : "删除符号失败",
+        error: error instanceof Error ? error.message : "移除监控失败",
         // timestamp: new Date().toISOString(),
       });
       setDialogOpen(true);
@@ -186,6 +272,16 @@ export default function HomePage() {
   const formatTimestamp = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString();
   };
+
+  const watchedSymbolSet = new Set(
+    symbols.map((item) => item.symbol.toLowerCase())
+  );
+  const normalizedCandidateFilter = candidateFilter.trim().toLowerCase();
+  const filteredCandidateSymbols = candidateSymbols.filter((item) => {
+    if (!normalizedCandidateFilter) return true;
+    return item.symbol.toLowerCase().includes(normalizedCandidateFilter);
+  });
+  const visibleCandidateSymbols = filteredCandidateSymbols.slice(0, 80);
 
   if (isLoading) {
     return (
@@ -220,26 +316,29 @@ export default function HomePage() {
 
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>添加市场符号</CardTitle>
+            <CardTitle>手动添加监控币种</CardTitle>
           </CardHeader>
           <CardContent>
+            <p className="mb-4 text-sm text-gray-600">
+              只有这里的币种会参与行情拉取、指标计算和策略检查；候选提醒不会自动加入。
+            </p>
             <form onSubmit={handleAddSymbol} className="flex gap-2">
               <Input
-                placeholder="输入符号，例如: btcusdt"
+                placeholder="输入币种，例如: btcusdt"
                 value={newSymbol}
                 onChange={(e) => setNewSymbol(e.target.value)}
                 className="flex-1"
               />
               <Button type="submit" disabled={isAddingSymbol}>
-                {isAddingSymbol ? "添加中..." : "添加"}
+                {isAddingSymbol ? "加入中..." : "加入"}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="mb-6">
           <CardHeader>
-            <CardTitle>市场符号列表</CardTitle>
+            <CardTitle>当前监控列表</CardTitle>
           </CardHeader>
           <CardContent>
             {symbols.length === 0 ? (
@@ -267,7 +366,7 @@ export default function HomePage() {
                                 : "bg-red-100 text-red-800"
                             }`}
                           >
-                            {item.is_valid ? "有效" : "无效"}
+                            {item.is_valid ? "监控中" : "已暂停"}
                           </span>
                         </td>
                         <td className="px-4 py-2">
@@ -281,8 +380,8 @@ export default function HomePage() {
                             disabled={isDeletingSymbol[item.symbol]}
                           >
                             {isDeletingSymbol[item.symbol]
-                              ? "删除中..."
-                              : "删除"}
+                              ? "移除中..."
+                              : "移除"}
                           </Button>
                         </td>
                       </tr>
@@ -293,10 +392,136 @@ export default function HomePage() {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>候选币种</CardTitle>
+                <p className="mt-2 text-sm text-gray-600">
+                  候选新高邮件默认关闭，开启后才会发送 Binance 候选池突破提醒。
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block px-2 py-1 rounded text-xs ${
+                    candidateTopPriceNoticeEnabled
+                      ? "bg-green-100 text-green-800"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {candidateTopPriceNoticeEnabled ? "邮件开启" : "邮件关闭"}
+                </span>
+                <Button
+                  variant={candidateTopPriceNoticeEnabled ? "destructive" : "outline"}
+                  size="sm"
+                  onClick={handleToggleCandidateTopPriceNotice}
+                  disabled={
+                    isLoadingCandidateTopPriceNotice ||
+                    isUpdatingCandidateTopPriceNotice
+                  }
+                >
+                  {isLoadingCandidateTopPriceNotice
+                    ? "读取中..."
+                    : isUpdatingCandidateTopPriceNotice
+                      ? "更新中..."
+                      : candidateTopPriceNoticeEnabled
+                        ? "关闭新高邮件"
+                        : "开启新高邮件"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-gray-600">
+              这里来自 Binance 候选池，只用于发现机会；点击加入后才会进入监控列表。
+            </p>
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Input
+                placeholder="搜索候选币种，例如: eth"
+                value={candidateFilter}
+                onChange={(e) => setCandidateFilter(e.target.value)}
+                className="sm:max-w-xs"
+              />
+              <Button
+                variant="outline"
+                onClick={fetchCandidateSymbols}
+                disabled={isLoadingCandidates}
+              >
+                {isLoadingCandidates ? "刷新中..." : "刷新候选池"}
+              </Button>
+            </div>
+            {isLoadingCandidates && candidateSymbols.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">加载候选币种中...</div>
+            ) : visibleCandidateSymbols.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">暂无候选币种</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="px-4 py-2 text-left">币种</th>
+                      <th className="px-4 py-2 text-left">候选状态</th>
+                      <th className="px-4 py-2 text-left">发现时间</th>
+                      <th className="px-4 py-2 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleCandidateSymbols.map((item) => {
+                      const isWatched = watchedSymbolSet.has(
+                        item.symbol.toLowerCase()
+                      );
+                      const isAdding = isAddingCandidateSymbol[item.symbol];
+
+                      return (
+                        <tr key={item.symbol} className="border-t">
+                          <td className="px-4 py-2">{item.symbol}</td>
+                          <td className="px-4 py-2">
+                            <span
+                              className={`inline-block px-2 py-1 rounded text-xs ${
+                                isWatched
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-gray-100 text-gray-700"
+                              }`}
+                            >
+                              {isWatched ? "已监控" : "候选"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2">
+                            {formatTimestamp(item.create_ts)}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <Button
+                              variant={isWatched ? "outline" : "default"}
+                              size="sm"
+                              onClick={() => handleAddCandidateSymbol(item.symbol)}
+                              disabled={isWatched || isAdding}
+                            >
+                              {isWatched
+                                ? "已加入"
+                                : isAdding
+                                  ? "加入中..."
+                                  : "加入监控"}
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {filteredCandidateSymbols.length > visibleCandidateSymbols.length && (
+              <p className="mt-3 text-sm text-gray-500">
+                已显示前 {visibleCandidateSymbols.length} 个候选币种，可通过搜索缩小范围。
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
       {/* 响应弹框 */}
       <ResponseDialog
-        title="删除符号响应"
+        title="移除监控响应"
         isOpen={dialogOpen}
         onClose={() => setDialogOpen(false)}
         response={dialogResponse}

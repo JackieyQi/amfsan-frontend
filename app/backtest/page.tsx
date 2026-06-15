@@ -13,7 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isLoggedIn } from "@/lib/api";
+import {
+  getSignalCatalog,
+  isLoggedIn,
+  type SignalCatalog,
+} from "@/lib/api";
 import {
   getBacktestRecords,
   formatTimestamp,
@@ -36,6 +40,10 @@ export default function BacktestPage() {
   const [symbol, setSymbol] = useState("");
   const [status, setStatus] = useState<string>("");
   const [page, setPage] = useState(1);
+  const [signalCatalog, setSignalCatalog] = useState<SignalCatalog | null>(
+    null
+  );
+  const [isLoadingSignalCatalog, setIsLoadingSignalCatalog] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [selectedRecordId, setSelectedRecordId] = useState<string | undefined>(
@@ -53,6 +61,14 @@ export default function BacktestPage() {
 
     fetchBacktestRecords();
   }, [page, router]);
+
+  useEffect(() => {
+    if (!isLoggedIn()) {
+      return;
+    }
+
+    fetchSignalCatalog();
+  }, [router]);
 
   const fetchBacktestRecords = async () => {
     setIsLoading(true);
@@ -77,6 +93,19 @@ export default function BacktestPage() {
       toast.error(error instanceof Error ? error.message : "获取回测记录失败");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchSignalCatalog = async () => {
+    setIsLoadingSignalCatalog(true);
+
+    try {
+      const catalog = await getSignalCatalog();
+      setSignalCatalog(catalog);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "获取信号说明失败");
+    } finally {
+      setIsLoadingSignalCatalog(false);
     }
   };
 
@@ -168,6 +197,19 @@ export default function BacktestPage() {
     );
   };
 
+  const statusOptions = signalCatalog
+    ? Object.entries(signalCatalog.record_status_text).sort(
+        ([left], [right]) => Number(left) - Number(right)
+      )
+    : [
+        ["0", "入场信号待确认"],
+        ["1", "入场信号已记录，等待出场信号"],
+        ["2", "入场信号失效"],
+        ["3", "出场信号待确认"],
+        ["4", "出场信号已记录"],
+        ["5", "出场信号按当前价记录"],
+      ];
+
   return (
     <div className="flex flex-col items-center min-h-screen bg-gray-50 p-4">
       <div className="w-full max-w-6xl">
@@ -199,13 +241,11 @@ export default function BacktestPage() {
                     <SelectValue placeholder="选择状态" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* <SelectItem value="1">全部</SelectItem> */}
-                    <SelectItem value="0">挂买单中</SelectItem>
-                    <SelectItem value="1">买入成功，等待卖出</SelectItem>
-                    <SelectItem value="2">买入失败</SelectItem>
-                    <SelectItem value="3">挂卖单中</SelectItem>
-                    <SelectItem value="4">卖出成功</SelectItem>
-                    <SelectItem value="5">挂卖单失败，以市价卖出</SelectItem>
+                    {statusOptions.map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -215,6 +255,123 @@ export default function BacktestPage() {
                 </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle>信号说明</CardTitle>
+                <p className="mt-2 text-sm text-gray-600">
+                  这里用于查看当前策略信号、记录状态和因子表达式，不改变策略执行逻辑。
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchSignalCatalog}
+                disabled={isLoadingSignalCatalog}
+              >
+                {isLoadingSignalCatalog ? "刷新中..." : "刷新说明"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingSignalCatalog && !signalCatalog ? (
+              <div className="text-center py-4 text-gray-500">
+                加载信号说明中...
+              </div>
+            ) : !signalCatalog ? (
+              <div className="text-center py-4 text-gray-500">
+                暂无信号说明
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold">信号分类</h3>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {signalCatalog.signal_categories.map((category) => (
+                      <div
+                        key={category.key}
+                        className="rounded border bg-white p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{category.name}</span>
+                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
+                            {category.status}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-gray-600">
+                          {category.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold">策略表达式</h3>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {signalCatalog.strategies.map((strategy) => (
+                      <div
+                        key={strategy.key}
+                        className="rounded border bg-white p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium">{strategy.name}</span>
+                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
+                            {strategy.status}
+                          </span>
+                        </div>
+                        {strategy.admin_display?.summary && (
+                          <p className="mt-2 text-sm text-gray-600">
+                            {strategy.admin_display.summary}
+                          </p>
+                        )}
+                        <div className="mt-2 text-sm text-gray-700">
+                          入场：{strategy.entry_expression}
+                        </div>
+                        {strategy.exit_expression && (
+                          <div className="mt-1 text-sm text-gray-700">
+                            出场：{strategy.exit_expression}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold">因子 ID</h3>
+                  <div className="space-y-3">
+                    {signalCatalog.factor_groups.map((group) => (
+                      <div key={group.key} className="rounded border bg-white p-3">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{group.name}</span>
+                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
+                            {group.model}
+                          </span>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {group.factors.map((factor) => (
+                            <div key={factor.id} className="text-sm">
+                              <span className="mr-2 inline-block rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
+                                {factor.id}
+                              </span>
+                              <span className="font-medium">{factor.name}</span>
+                              <p className="mt-1 text-gray-600">
+                                {factor.description}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

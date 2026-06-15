@@ -39,6 +39,55 @@ export interface SymbolData {
   create_ts: number;
 }
 
+export interface CandidateTopPriceNoticeSetting {
+  enabled: boolean;
+}
+
+export interface SignalCategory {
+  key: string;
+  name: string;
+  status: string;
+  description: string;
+}
+
+export interface SignalFactor {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface SignalFactorGroup {
+  key: string;
+  name: string;
+  model: string;
+  factors: SignalFactor[];
+}
+
+export interface SignalStrategy {
+  key: string;
+  name: string;
+  status: string;
+  entry_expression: string;
+  entry_examples?: string[];
+  exit_expression?: string;
+  source: string;
+  admin_display?: {
+    summary: string;
+    show_factor_ids: boolean;
+  };
+}
+
+export interface SignalCatalog {
+  schema_version: string;
+  system_role: string;
+  notes: string[];
+  signal_categories: SignalCategory[];
+  factor_groups: SignalFactorGroup[];
+  strategies: SignalStrategy[];
+  record_status_text: Record<string, string>;
+}
+
 // 获取存储的token
 // function getAuthToken(): string | null {
 //   const userInfoStr = localStorage.getItem("userInfo");
@@ -297,12 +346,45 @@ export function isLoggedIn(): boolean {
   }
 }
 
-// 获取市场符号列表
+// 获取当前监控列表
 export async function getMarketSymbols(): Promise<SymbolData[]> {
   return apiRequest<SymbolData[]>("/api/market/plot", { method: "GET" });
 }
 
-// 添加市场符号
+// 获取 Binance 候选币种列表
+export async function getCandidateSymbols(): Promise<SymbolData[]> {
+  return apiRequest<SymbolData[]>("/api/market/bn/symbol", { method: "GET" });
+}
+
+// 获取候选新高邮件开关
+export async function getCandidateTopPriceNoticeSetting(): Promise<CandidateTopPriceNoticeSetting> {
+  return apiRequest<CandidateTopPriceNoticeSetting>(
+    "/api/market/bn/top-price-notice",
+    { method: "GET" }
+  );
+}
+
+// 更新候选新高邮件开关
+export async function updateCandidateTopPriceNoticeSetting(
+  enabled: boolean
+): Promise<CandidateTopPriceNoticeSetting> {
+  return apiRequest<CandidateTopPriceNoticeSetting>(
+    "/api/market/bn/top-price-notice",
+    {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }
+  );
+}
+
+// 获取信号和策略展示目录
+export async function getSignalCatalog(): Promise<SignalCatalog> {
+  return apiRequest<SignalCatalog>("/api/plot/signal/catalog", {
+    method: "GET",
+  });
+}
+
+// 手动添加监控币种
 export async function addMarketSymbol(symbol: string): Promise<void> {
   if (!symbol) {
     throw new Error("符号不能为空");
@@ -314,7 +396,7 @@ export async function addMarketSymbol(symbol: string): Promise<void> {
   });
 }
 
-// 删除市场符号
+// 移除手动监控币种
 export async function deleteMarketSymbol(symbol: string): Promise<void> {
   if (!symbol) {
     throw new Error("符号不能为空");
@@ -361,7 +443,7 @@ export async function deleteMarketSymbol(symbol: string): Promise<void> {
     const result = await response.json();
     return result;
   } catch (error) {
-    // console.error("删除符号失败:", error);
+    // console.error("移除监控失败:", error);
     throw error;
   }
 }
