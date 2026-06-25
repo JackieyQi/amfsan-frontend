@@ -10,6 +10,15 @@ interface ApiResponse<T = any> {
   data: T;
 }
 
+function isApiResponse<T>(result: ApiResponse<T> | T): result is ApiResponse<T> {
+  return (
+    !!result &&
+    typeof result === "object" &&
+    "code" in result &&
+    "data" in result
+  );
+}
+
 // 登录响应数据类型
 interface LoginResponseData {
   user_id: string;
@@ -41,6 +50,20 @@ export interface SymbolData {
 
 export interface CandidateTopPriceNoticeSetting {
   enabled: boolean;
+}
+
+export interface MarketPriceAlertData {
+  current_price?: string;
+  limit_low_price?: string;
+  limit_high_price?: string;
+  set_time?: string;
+}
+
+export interface MarketPriceAlertResponse {
+  symbol: string;
+  price?: MarketPriceAlertData;
+  set_limit_price_result?: string;
+  set_limit_price_code?: number;
 }
 
 export interface SignalCategory {
@@ -205,14 +228,18 @@ async function apiRequest<T>(
     }
 
     // 安全解析JSON响应
-    const result = await safeParseJson<ApiResponse<T>>(response);
+    const result = await safeParseJson<ApiResponse<T> | T>(response);
 
-    // 检查API返回的code
-    if (result.code !== 0) {
-      throw new Error(result.message || "请求失败");
+    if (isApiResponse(result)) {
+      // 检查API返回的code
+      if (result.code !== 0) {
+        throw new Error(result.message || "请求失败");
+      }
+
+      return result.data;
     }
 
-    return result.data;
+    return result as T;
   } catch (error) {
     // console.error("API请求错误:", error);
     throw error;
@@ -381,6 +408,30 @@ export async function updateCandidateTopPriceNoticeSetting(
 export async function getSignalCatalog(): Promise<SignalCatalog> {
   return apiRequest<SignalCatalog>("/api/plot/signal/catalog", {
     method: "GET",
+  });
+}
+
+// 设置币种价格预警
+export async function setMarketPriceAlert(
+  symbol: string,
+  limitLowPrice: string,
+  limitHighPrice: string
+): Promise<MarketPriceAlertResponse> {
+  if (!symbol) {
+    throw new Error("符号不能为空");
+  }
+
+  if (!limitLowPrice || !limitHighPrice) {
+    throw new Error("请输入低价和高价");
+  }
+
+  return apiRequest<MarketPriceAlertResponse>("/api/market/price/", {
+    method: "POST",
+    body: JSON.stringify({
+      symbol: symbol.toLowerCase(),
+      limit_low_price: limitLowPrice,
+      limit_high_price: limitHighPrice,
+    }),
   });
 }
 

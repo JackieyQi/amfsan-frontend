@@ -16,14 +16,15 @@ import {
   getCandidateSymbols,
   getCandidateTopPriceNoticeSetting,
   updateCandidateTopPriceNoticeSetting,
+  setMarketPriceAlert,
   addMarketSymbol,
   deleteMarketSymbol,
   type UserDetails,
   type SymbolData,
+  type MarketPriceAlertResponse,
 } from "@/lib/api";
 import { safeJsonParse, safeText } from "@/lib/security";
 import { ResponseDialog } from "@/components/response-dialog";
-import { timeStamp } from "console";
 
 // 定义用户类型
 interface UserInfo {
@@ -52,6 +53,12 @@ export default function HomePage() {
     setIsUpdatingCandidateTopPriceNotice,
   ] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
+  const [priceAlertSymbol, setPriceAlertSymbol] = useState("");
+  const [limitLowPrice, setLimitLowPrice] = useState("");
+  const [limitHighPrice, setLimitHighPrice] = useState("");
+  const [isSavingPriceAlert, setIsSavingPriceAlert] = useState(false);
+  const [priceAlertResponse, setPriceAlertResponse] =
+    useState<MarketPriceAlertResponse | null>(null);
   const [isAddingSymbol, setIsAddingSymbol] = useState(false);
   const [isDeletingSymbol, setIsDeletingSymbol] = useState<
     Record<string, boolean>
@@ -102,6 +109,12 @@ export default function HomePage() {
       .catch((err) => console.error("获取数据失败", err))
       .finally(() => setIsLoading(false));
   }, [router]);
+
+  useEffect(() => {
+    if (!priceAlertSymbol && symbols.length > 0) {
+      setPriceAlertSymbol(symbols[0].symbol);
+    }
+  }, [priceAlertSymbol, symbols]);
 
   const fetchUserDetails = async () => {
     try {
@@ -226,6 +239,39 @@ export default function HomePage() {
     }
   };
 
+  const handleSavePriceAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const symbol = priceAlertSymbol.trim();
+    const lowPrice = limitLowPrice.trim();
+    const highPrice = limitHighPrice.trim();
+
+    if (!symbol) {
+      toast.error("请输入币种");
+      return;
+    }
+
+    if (!lowPrice || !highPrice) {
+      toast.error("请输入低价和高价");
+      return;
+    }
+
+    setIsSavingPriceAlert(true);
+
+    try {
+      const data = await setMarketPriceAlert(symbol, lowPrice, highPrice);
+      setPriceAlertResponse(data);
+      setPriceAlertSymbol(data.symbol || symbol);
+      setLimitLowPrice(data.price?.limit_low_price || lowPrice);
+      setLimitHighPrice(data.price?.limit_high_price || highPrice);
+      toast.success(`已保存价格预警: ${data.symbol || symbol}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存价格预警失败");
+    } finally {
+      setIsSavingPriceAlert(false);
+    }
+  };
+
   const handleDeleteSymbol = async (symbol: string) => {
     setIsDeletingSymbol((prev) => ({ ...prev, [symbol]: true }));
 
@@ -333,6 +379,91 @@ export default function HomePage() {
                 {isAddingSymbol ? "加入中..." : "加入"}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>价格预警</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSavePriceAlert} className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end">
+                <div className="space-y-2">
+                  <label htmlFor="price-alert-symbol" className="text-sm font-medium">
+                    币种
+                  </label>
+                  <Input
+                    id="price-alert-symbol"
+                    placeholder="btcusdt"
+                    value={priceAlertSymbol}
+                    onChange={(e) => setPriceAlertSymbol(e.target.value.trim())}
+                    list="watched-symbols"
+                  />
+                  <datalist id="watched-symbols">
+                    {symbols.map((item) => (
+                      <option key={item.symbol} value={item.symbol} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="limit-low-price" className="text-sm font-medium">
+                    低价
+                  </label>
+                  <Input
+                    id="limit-low-price"
+                    inputMode="decimal"
+                    placeholder="60000"
+                    value={limitLowPrice}
+                    onChange={(e) => setLimitLowPrice(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="limit-high-price" className="text-sm font-medium">
+                    高价
+                  </label>
+                  <Input
+                    id="limit-high-price"
+                    inputMode="decimal"
+                    placeholder="70000"
+                    value={limitHighPrice}
+                    onChange={(e) => setLimitHighPrice(e.target.value)}
+                  />
+                </div>
+                <Button type="submit" disabled={isSavingPriceAlert}>
+                  {isSavingPriceAlert ? "保存中..." : "保存预警"}
+                </Button>
+              </div>
+            </form>
+
+            {priceAlertResponse?.price && (
+              <div className="mt-4 grid gap-3 rounded-md border bg-gray-50 p-3 text-sm md:grid-cols-4">
+                <div>
+                  <p className="text-gray-500">当前价格</p>
+                  <p className="font-medium">
+                    {safeText(priceAlertResponse.price.current_price || "-")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">低价预警</p>
+                  <p className="font-medium">
+                    {safeText(priceAlertResponse.price.limit_low_price || "-")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">高价预警</p>
+                  <p className="font-medium">
+                    {safeText(priceAlertResponse.price.limit_high_price || "-")}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">保存时间</p>
+                  <p className="font-medium">
+                    {safeText(priceAlertResponse.price.set_time || "-")}
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
