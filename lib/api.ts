@@ -48,23 +48,29 @@ export interface SymbolData {
   create_ts: number;
 }
 
+export interface MonitorData extends SymbolData {
+  id: number;
+  user_id: string;
+  monitor_direction: "buy" | "sell";
+  take_profit_price: string | null;
+  stop_loss_price: string | null;
+  last_signal_ts: number;
+  last_signal_reason: string;
+}
+
+export interface MonitorConfig {
+  monitor_direction: "buy" | "sell";
+  take_profit_price?: string | null;
+  stop_loss_price?: string | null;
+}
+
 export interface CandidateTopPriceNoticeSetting {
   enabled: boolean;
 }
 
-export interface MarketPriceAlertData {
-  current_price?: string;
-  limit_low_price?: string;
-  limit_high_price?: string;
-  set_time?: string;
-}
 
-export interface MarketPriceAlertResponse {
-  symbol: string;
-  price?: MarketPriceAlertData;
-  set_limit_price_result?: string;
-  set_limit_price_code?: number;
-}
+
+
 
 export interface SignalCategory {
   key: string;
@@ -374,8 +380,8 @@ export function isLoggedIn(): boolean {
 }
 
 // 获取当前监控列表
-export async function getMarketSymbols(): Promise<SymbolData[]> {
-  return apiRequest<SymbolData[]>("/api/market/plot", { method: "GET" });
+export async function getMarketSymbols(): Promise<MonitorData[]> {
+  return apiRequest<MonitorData[]>("/api/market/plot", { method: "GET" });
 }
 
 // 获取 Binance 候选币种列表
@@ -411,90 +417,24 @@ export async function getSignalCatalog(): Promise<SignalCatalog> {
   });
 }
 
-// 设置币种价格预警
-export async function setMarketPriceAlert(
-  symbol: string,
-  limitLowPrice: string,
-  limitHighPrice: string
-): Promise<MarketPriceAlertResponse> {
-  if (!symbol) {
-    throw new Error("符号不能为空");
-  }
-
-  if (!limitLowPrice || !limitHighPrice) {
-    throw new Error("请输入低价和高价");
-  }
-
-  return apiRequest<MarketPriceAlertResponse>("/api/market/price/", {
+// 明确监控方向；同一用户、同一币种只能有一条配置。
+export async function addMarketSymbol(symbol: string, config: MonitorConfig): Promise<MonitorData> {
+  return apiRequest<MonitorData>("/api/market/plot", {
     method: "POST",
-    body: JSON.stringify({
-      symbol: symbol.toLowerCase(),
-      limit_low_price: limitLowPrice,
-      limit_high_price: limitHighPrice,
-    }),
+    body: JSON.stringify({ symbol: symbol.trim().toLowerCase(), ...config }),
   });
 }
 
-// 手动添加监控币种
-export async function addMarketSymbol(symbol: string): Promise<void> {
-  if (!symbol) {
-    throw new Error("符号不能为空");
-  }
-
-  return apiRequest<void>("/api/market/plot", {
-    method: "POST",
-    body: JSON.stringify({ symbol: symbol.toLowerCase() }),
+export async function updateMarketSymbol(
+  id: number, config: Partial<MonitorConfig> & { is_valid?: boolean }
+): Promise<MonitorData> {
+  return apiRequest<MonitorData>("/api/market/plot", {
+    method: "PUT", body: JSON.stringify({ id, ...config }),
   });
 }
 
-// 移除手动监控币种
-export async function deleteMarketSymbol(symbol: string): Promise<void> {
-  if (!symbol) {
-    throw new Error("符号不能为空");
-  }
-
-  // return apiRequest<void>("/api/market/plot", {
-  //   method: "DELETE",
-  //   body: JSON.stringify({ symbol: symbol.toLowerCase() }),
-  // });
-  try {
-    const url = `${config.apiBaseUrl}/api/market/plot`;
-    const token = getAuthToken();
-
-    if (!token) {
-      throw new Error("未找到认证令牌");
-    }
-
-    const response = await fetch(url, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ symbol: symbol.toLowerCase() }),
-      credentials: "include",
-      mode: "cors",
-    });
-
-    // 检查响应状态
-    if (!response.ok) {
-      // 尝试解析错误响应
-      if (await isJsonResponse(response)) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `请求失败: ${response.status}`);
-      } else {
-        // 如果不是JSON响应，获取文本内容
-        // const text = await response.text();
-        // console.error("错误响应内容:", text.substring(0, 200) + "...");
-        throw new Error(`请求失败: ${response.status} ${response.statusText}`);
-      }
-    }
-
-    // 解析完整响应并返回
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    // console.error("移除监控失败:", error);
-    throw error;
-  }
+export async function deleteMarketSymbol(id: number): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>("/api/market/plot", {
+    method: "DELETE", body: JSON.stringify({ id }),
+  });
 }

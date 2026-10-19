@@ -16,15 +16,15 @@ import {
   getCandidateSymbols,
   getCandidateTopPriceNoticeSetting,
   updateCandidateTopPriceNoticeSetting,
-  setMarketPriceAlert,
+  updateMarketSymbol,
   addMarketSymbol,
   deleteMarketSymbol,
   type UserDetails,
   type SymbolData,
-  type MarketPriceAlertResponse,
+  type MonitorData,
 } from "@/lib/api";
 import { safeJsonParse, safeText } from "@/lib/security";
-import { ResponseDialog } from "@/components/response-dialog";
+
 
 // 定义用户类型
 interface UserInfo {
@@ -38,7 +38,7 @@ export default function HomePage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [symbols, setSymbols] = useState<SymbolData[]>([]);
+  const [symbols, setSymbols] = useState<MonitorData[]>([]);
   const [candidateSymbols, setCandidateSymbols] = useState<SymbolData[]>([]);
   const [candidateFilter, setCandidateFilter] = useState("");
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
@@ -53,21 +53,12 @@ export default function HomePage() {
     setIsUpdatingCandidateTopPriceNotice,
   ] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
-  const [priceAlertSymbol, setPriceAlertSymbol] = useState("");
-  const [limitLowPrice, setLimitLowPrice] = useState("");
-  const [limitHighPrice, setLimitHighPrice] = useState("");
-  const [isSavingPriceAlert, setIsSavingPriceAlert] = useState(false);
-  const [priceAlertResponse, setPriceAlertResponse] =
-    useState<MarketPriceAlertResponse | null>(null);
+  const [direction, setDirection] = useState<"" | "buy" | "sell">("");
+  const [stopLoss, setStopLoss] = useState("");
+  const [takeProfit, setTakeProfit] = useState("");
+  const [editing, setEditing] = useState<MonitorData | null>(null);
   const [isAddingSymbol, setIsAddingSymbol] = useState(false);
-  const [isDeletingSymbol, setIsDeletingSymbol] = useState<
-    Record<string, boolean>
-  >({});
-  const [isAddingCandidateSymbol, setIsAddingCandidateSymbol] = useState<
-    Record<string, boolean>
-  >({});
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogResponse, setDialogResponse] = useState<any>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -109,12 +100,6 @@ export default function HomePage() {
       .catch((err) => console.error("获取数据失败", err))
       .finally(() => setIsLoading(false));
   }, [router]);
-
-  useEffect(() => {
-    if (!priceAlertSymbol && symbols.length > 0) {
-      setPriceAlertSymbol(symbols[0].symbol);
-    }
-  }, [priceAlertSymbol, symbols]);
 
   const fetchUserDetails = async () => {
     try {
@@ -184,41 +169,68 @@ export default function HomePage() {
     }
   };
 
+  const resetForm = () => {
+    setEditing(null);
+    setNewSymbol("");
+    setDirection("");
+    setStopLoss("");
+    setTakeProfit("");
+  };
+
   const handleAddSymbol = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!newSymbol.trim()) {
-      toast.error("请输入有效的币种");
+    if (!newSymbol.trim() || !direction) {
+      toast.error("请填写币种并选择监控方向");
       return;
     }
-
     setIsAddingSymbol(true);
-
+    const config = {
+      monitor_direction: direction,
+      stop_loss_price: direction === "sell" ? stopLoss.trim() || null : null,
+      take_profit_price: direction === "sell" ? takeProfit.trim() || null : null,
+    };
     try {
-      // 恢复实际API调用
-      await addMarketSymbol(newSymbol.trim());
-      toast.success(`已加入监控列表: ${newSymbol}`);
-      setNewSymbol("");
-      // 重新获取符号列表
-      fetchMarketSymbols();
+      if (editing) {
+        await updateMarketSymbol(editing.id, config);
+      } else {
+        await addMarketSymbol(newSymbol, config);
+      }
+      toast.success(editing ? "监控配置已更新" : "已添加监控");
+      resetForm();
+      await fetchMarketSymbols();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "添加符号失败");
+      toast.error(error instanceof Error ? error.message : "保存失败");
     } finally {
       setIsAddingSymbol(false);
     }
   };
 
-  const handleAddCandidateSymbol = async (symbol: string) => {
-    setIsAddingCandidateSymbol((prev) => ({ ...prev, [symbol]: true }));
+  const editMonitor = (item: MonitorData) => {
+    setEditing(item);
+    setNewSymbol(item.symbol);
+    setDirection(item.monitor_direction);
+    setStopLoss(item.stop_loss_price || "");
+    setTakeProfit(item.take_profit_price || "");
+    document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
+  };
 
+  const handleAddCandidateSymbol = (symbol: string) => {
+    resetForm();
+    setNewSymbol(symbol);
+    document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
+    toast.info("请选择买入或卖出方向，再添加监控");
+  };
+
+  const toggleMonitor = async (item: MonitorData) => {
+    setBusyId(item.id);
     try {
-      await addMarketSymbol(symbol);
-      toast.success(`已加入监控列表: ${symbol}`);
+      await updateMarketSymbol(item.id, { is_valid: !item.is_valid });
+      toast.success(item.is_valid ? "已暂停检查和通知" : "已恢复监控");
       await fetchMarketSymbols();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加入监控失败");
+      toast.error(error instanceof Error ? error.message : "更新失败");
     } finally {
-      setIsAddingCandidateSymbol((prev) => ({ ...prev, [symbol]: false }));
+      setBusyId(null);
     }
   };
 
@@ -239,67 +251,17 @@ export default function HomePage() {
     }
   };
 
-  const handleSavePriceAlert = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const symbol = priceAlertSymbol.trim();
-    const lowPrice = limitLowPrice.trim();
-    const highPrice = limitHighPrice.trim();
-
-    if (!symbol) {
-      toast.error("请输入币种");
-      return;
-    }
-
-    if (!lowPrice || !highPrice) {
-      toast.error("请输入低价和高价");
-      return;
-    }
-
-    setIsSavingPriceAlert(true);
-
+  const handleDeleteSymbol = async (item: MonitorData) => {
+    setBusyId(item.id);
     try {
-      const data = await setMarketPriceAlert(symbol, lowPrice, highPrice);
-      setPriceAlertResponse(data);
-      setPriceAlertSymbol(data.symbol || symbol);
-      setLimitLowPrice(data.price?.limit_low_price || lowPrice);
-      setLimitHighPrice(data.price?.limit_high_price || highPrice);
-      toast.success(`已保存价格预警: ${data.symbol || symbol}`);
+      await deleteMarketSymbol(item.id);
+      setSymbols((prev) => prev.filter((row) => row.id !== item.id));
+      if (editing?.id === item.id) resetForm();
+      toast.success("已移除监控，历史数据已保留");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存价格预警失败");
+      toast.error(error instanceof Error ? error.message : "移除失败");
     } finally {
-      setIsSavingPriceAlert(false);
-    }
-  };
-
-  const handleDeleteSymbol = async (symbol: string) => {
-    setIsDeletingSymbol((prev) => ({ ...prev, [symbol]: true }));
-
-    try {
-      // 恢复实际API调用
-      const response = await deleteMarketSymbol(symbol);
-      // toast.success(`已移出监控列表: ${symbol}`);
-
-      setDialogResponse({
-        symbol,
-        response,
-        // timeStamp: new Date().toISOString(),
-      });
-      setDialogOpen(true);
-
-      // 更新本地状态，移出监控列表
-      setSymbols((prev) => prev.filter((item) => item.symbol !== symbol));
-    } catch (error) {
-      // toast.error(error instanceof Error ? error.message : "移除监控失败");
-      // 显示错误响应弹框
-      setDialogResponse({
-        symbol,
-        error: error instanceof Error ? error.message : "移除监控失败",
-        // timestamp: new Date().toISOString(),
-      });
-      setDialogOpen(true);
-    } finally {
-      setIsDeletingSymbol((prev) => ({ ...prev, [symbol]: false }));
+      setBusyId(null);
     }
   };
 
@@ -320,7 +282,7 @@ export default function HomePage() {
   };
 
   const watchedSymbolSet = new Set(
-    symbols.map((item) => item.symbol.toLowerCase())
+    symbols.filter((item) => item.user_id === userInfo?.user_id).map((item) => item.symbol.toLowerCase())
   );
   const normalizedCandidateFilter = candidateFilter.trim().toLowerCase();
   const filteredCandidateSymbols = candidateSymbols.filter((item) => {
@@ -360,164 +322,95 @@ export default function HomePage() {
           </Button>
         </div>
 
-        <Card className="mb-6">
+        <Card className="mb-6" id="monitor-form">
           <CardHeader>
-            <CardTitle>手动添加监控币种</CardTitle>
+            <CardTitle>{editing ? `编辑监控：${editing.symbol}` : "添加方向监控"}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="mb-4 text-sm text-gray-600">
-              只有这里的币种会参与行情拉取、指标计算和策略检查；候选提醒不会自动加入。
+              选择想关注的方向，满足条件后邮件提醒。通知后继续监控，方向由你手动切换。
             </p>
-            <form onSubmit={handleAddSymbol} className="flex gap-2">
-              <Input
-                placeholder="输入币种，例如: btcusdt"
-                value={newSymbol}
-                onChange={(e) => setNewSymbol(e.target.value)}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={isAddingSymbol}>
-                {isAddingSymbol ? "加入中..." : "加入"}
-              </Button>
+            {editing && <p className="mb-3 text-sm">所属用户：{editing.user_id} · {editing.is_valid ? "监控中" : "已暂停，保存不会自动恢复"}</p>}
+            <form onSubmit={handleAddSymbol} className="space-y-4">
+              <fieldset disabled={isAddingSymbol} className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-2 text-sm">
+                    <span>币种</span>
+                    <Input required placeholder="例如 ethusdt" value={newSymbol} disabled={!!editing}
+                      onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span>监控方向</span>
+                    <select required value={direction}
+                      onChange={(e) => setDirection(e.target.value as "" | "buy" | "sell")}
+                      className="h-9 w-full rounded-md border bg-white px-3">
+                      <option value="" disabled>请选择方向</option>
+                      <option value="buy">监控买入机会</option>
+                      <option value="sell">监控卖出机会</option>
+                    </select>
+                  </label>
+                </div>
+                {direction === "sell" && (
+                  <div className="space-y-2">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-2 text-sm">
+                        <span>止损价（可选）</span>
+                        <Input inputMode="decimal" placeholder="价格跌至此处时提醒" value={stopLoss}
+                          onChange={(e) => setStopLoss(e.target.value)} />
+                      </label>
+                      <label className="space-y-2 text-sm">
+                        <span>止盈价（可选）</span>
+                        <Input inputMode="decimal" placeholder="价格涨至此处时提醒" value={takeProfit}
+                          onChange={(e) => setTakeProfit(e.target.value)} />
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500">不填价格时仅检查卖出技术信号；填写后，触价也会独立提醒。</p>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button type="submit">{isAddingSymbol ? "保存中..." : editing ? "保存修改" : "添加监控"}</Button>
+                  {editing && <Button type="button" variant="outline" onClick={resetForm}>取消编辑</Button>}
+                </div>
+              </fieldset>
             </form>
           </CardContent>
         </Card>
 
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>价格预警</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>当前监控列表</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => fetchMarketSymbols()}>刷新</Button>
+            </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSavePriceAlert} className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end">
-                <div className="space-y-2">
-                  <label htmlFor="price-alert-symbol" className="text-sm font-medium">
-                    币种
-                  </label>
-                  <Input
-                    id="price-alert-symbol"
-                    placeholder="btcusdt"
-                    value={priceAlertSymbol}
-                    onChange={(e) => setPriceAlertSymbol(e.target.value.trim())}
-                    list="watched-symbols"
-                  />
-                  <datalist id="watched-symbols">
-                    {symbols.map((item) => (
-                      <option key={item.symbol} value={item.symbol} />
-                    ))}
-                  </datalist>
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="limit-low-price" className="text-sm font-medium">
-                    低价
-                  </label>
-                  <Input
-                    id="limit-low-price"
-                    inputMode="decimal"
-                    placeholder="60000"
-                    value={limitLowPrice}
-                    onChange={(e) => setLimitLowPrice(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="limit-high-price" className="text-sm font-medium">
-                    高价
-                  </label>
-                  <Input
-                    id="limit-high-price"
-                    inputMode="decimal"
-                    placeholder="70000"
-                    value={limitHighPrice}
-                    onChange={(e) => setLimitHighPrice(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" disabled={isSavingPriceAlert}>
-                  {isSavingPriceAlert ? "保存中..." : "保存预警"}
-                </Button>
-              </div>
-            </form>
-
-            {priceAlertResponse?.price && (
-              <div className="mt-4 grid gap-3 rounded-md border bg-gray-50 p-3 text-sm md:grid-cols-4">
-                <div>
-                  <p className="text-gray-500">当前价格</p>
-                  <p className="font-medium">
-                    {safeText(priceAlertResponse.price.current_price || "-")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">低价预警</p>
-                  <p className="font-medium">
-                    {safeText(priceAlertResponse.price.limit_low_price || "-")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">高价预警</p>
-                  <p className="font-medium">
-                    {safeText(priceAlertResponse.price.limit_high_price || "-")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">保存时间</p>
-                  <p className="font-medium">
-                    {safeText(priceAlertResponse.price.set_time || "-")}
-                  </p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>当前监控列表</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {symbols.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">暂无数据</div>
-            ) : (
+            {symbols.length === 0 ? <div className="py-4 text-center text-gray-500">暂无监控，请添加币种并选择方向</div> : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-4 py-2 text-left">符号</th>
-                      <th className="px-4 py-2 text-left">状态</th>
-                      <th className="px-4 py-2 text-left">创建时间</th>
-                      <th className="px-4 py-2 text-right">操作</th>
+                <table className="w-full border-collapse text-sm">
+                  <thead><tr className="bg-gray-100">
+                    <th className="px-3 py-2 text-left">币种 / 用户</th>
+                    <th className="px-3 py-2 text-left">方向 / 状态</th>
+                    <th className="px-3 py-2 text-left">止损 / 止盈</th>
+                    <th className="px-3 py-2 text-left">最近提醒</th>
+                    <th className="px-3 py-2 text-right">操作</th>
+                  </tr></thead>
+                  <tbody>{symbols.map((item) => (
+                    <tr key={item.id} className="border-t">
+                      <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
+                      <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
+                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.is_valid ? "监控中" : "已暂停"}</div>
+                      </td>
+                      <td className="px-3 py-3">{item.stop_loss_price || "—"} / {item.take_profit_price || "—"}</td>
+                      <td className="px-3 py-3">{item.last_signal_ts ? formatTimestamp(item.last_signal_ts) : "暂无"}
+                        <div className="text-xs text-gray-500">{{ model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
+                      </td>
+                      <td className="px-3 py-3"><div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" disabled={busyId !== null || isAddingSymbol} onClick={() => editMonitor(item)}>编辑</Button>
+                        <Button size="sm" variant="outline" disabled={busyId !== null || isAddingSymbol} onClick={() => toggleMonitor(item)}>{item.is_valid ? "暂停" : "恢复"}</Button>
+                        <Button size="sm" variant="destructive" disabled={busyId !== null || isAddingSymbol} onClick={() => handleDeleteSymbol(item)}>移除</Button>
+                      </div></td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {symbols.map((item) => (
-                      <tr key={item.symbol} className="border-t">
-                        <td className="px-4 py-2">{item.symbol}</td>
-                        <td className="px-4 py-2">
-                          <span
-                            className={`inline-block px-2 py-1 rounded text-xs ${
-                              item.is_valid
-                                ? "bg-green-100 text-green-800"
-                                : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {item.is_valid ? "监控中" : "已暂停"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2">
-                          {formatTimestamp(item.create_ts)}
-                        </td>
-                        <td className="px-4 py-2 text-right">
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteSymbol(item.symbol)}
-                            disabled={isDeletingSymbol[item.symbol]}
-                          >
-                            {isDeletingSymbol[item.symbol]
-                              ? "移除中..."
-                              : "移除"}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                  ))}</tbody>
                 </table>
               </div>
             )}
@@ -602,7 +495,6 @@ export default function HomePage() {
                       const isWatched = watchedSymbolSet.has(
                         item.symbol.toLowerCase()
                       );
-                      const isAdding = isAddingCandidateSymbol[item.symbol];
 
                       return (
                         <tr key={item.symbol} className="border-t">
@@ -626,13 +518,11 @@ export default function HomePage() {
                               variant={isWatched ? "outline" : "default"}
                               size="sm"
                               onClick={() => handleAddCandidateSymbol(item.symbol)}
-                              disabled={isWatched || isAdding}
+                              disabled={isWatched || isAddingSymbol}
                             >
                               {isWatched
                                 ? "已加入"
-                                : isAdding
-                                  ? "加入中..."
-                                  : "加入监控"}
+                                : "选择方向"}
                             </Button>
                           </td>
                         </tr>
@@ -650,13 +540,6 @@ export default function HomePage() {
           </CardContent>
         </Card>
       </div>
-      {/* 响应弹框 */}
-      <ResponseDialog
-        title="移除监控响应"
-        isOpen={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        response={dialogResponse}
-      />
     </div>
   );
 }
