@@ -14,9 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  getSignalCatalog,
   isLoggedIn,
-  type SignalCatalog,
 } from "@/lib/api";
 import {
   getBacktestRecords,
@@ -40,10 +38,6 @@ export default function BacktestPage() {
   const [symbol, setSymbol] = useState("");
   const [status, setStatus] = useState<string>("");
   const [page, setPage] = useState(1);
-  const [signalCatalog, setSignalCatalog] = useState<SignalCatalog | null>(
-    null
-  );
-  const [isLoadingSignalCatalog, setIsLoadingSignalCatalog] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState("");
   const [selectedRecordId, setSelectedRecordId] = useState<string | undefined>(
@@ -61,14 +55,6 @@ export default function BacktestPage() {
 
     fetchBacktestRecords();
   }, [page, router]);
-
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      return;
-    }
-
-    fetchSignalCatalog();
-  }, [router]);
 
   const fetchBacktestRecords = async () => {
     setIsLoading(true);
@@ -90,22 +76,9 @@ export default function BacktestPage() {
         }
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "获取回测记录失败");
+      toast.error(error instanceof Error ? error.message : "获取历史模拟记录失败");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchSignalCatalog = async () => {
-    setIsLoadingSignalCatalog(true);
-
-    try {
-      const catalog = await getSignalCatalog();
-      setSignalCatalog(catalog);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "获取信号说明失败");
-    } finally {
-      setIsLoadingSignalCatalog(false);
     }
   };
 
@@ -197,11 +170,7 @@ export default function BacktestPage() {
     );
   };
 
-  const statusOptions = signalCatalog
-    ? Object.entries(signalCatalog.record_status_text).sort(
-        ([left], [right]) => Number(left) - Number(right)
-      )
-    : [
+  const statusOptions = [
         ["0", "入场信号待确认"],
         ["1", "入场信号已记录，等待出场信号"],
         ["2", "入场信号失效"],
@@ -214,7 +183,7 @@ export default function BacktestPage() {
     <div className="flex flex-col items-center min-h-screen bg-gray-50 p-4">
       <div className="w-full max-w-6xl">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">策略实盘数据</h1>
+          <h1 className="text-2xl font-bold">历史模拟记录</h1>
           <Button variant="outline" onClick={() => router.push("/home")}>
             返回首页
           </Button>
@@ -258,126 +227,10 @@ export default function BacktestPage() {
           </CardContent>
         </Card>
 
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle>信号说明</CardTitle>
-                <p className="mt-2 text-sm text-gray-600">
-                  这里用于查看当前策略信号、记录状态和因子表达式，不改变策略执行逻辑。
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchSignalCatalog}
-                disabled={isLoadingSignalCatalog}
-              >
-                {isLoadingSignalCatalog ? "刷新中..." : "刷新说明"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isLoadingSignalCatalog && !signalCatalog ? (
-              <div className="text-center py-4 text-gray-500">
-                加载信号说明中...
-              </div>
-            ) : !signalCatalog ? (
-              <div className="text-center py-4 text-gray-500">
-                暂无信号说明
-              </div>
-            ) : (
-              <div className="space-y-5">
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold">信号分类</h3>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {signalCatalog.signal_categories.map((category) => (
-                      <div
-                        key={category.key}
-                        className="rounded border bg-white p-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{category.name}</span>
-                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
-                            {category.status}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm text-gray-600">
-                          {category.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold">策略表达式</h3>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {signalCatalog.strategies.map((strategy) => (
-                      <div
-                        key={strategy.key}
-                        className="rounded border bg-white p-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">{strategy.name}</span>
-                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
-                            {strategy.status}
-                          </span>
-                        </div>
-                        {strategy.admin_display?.summary && (
-                          <p className="mt-2 text-sm text-gray-600">
-                            {strategy.admin_display.summary}
-                          </p>
-                        )}
-                        <div className="mt-2 text-sm text-gray-700">
-                          入场：{strategy.entry_expression}
-                        </div>
-                        {strategy.exit_expression && (
-                          <div className="mt-1 text-sm text-gray-700">
-                            出场：{strategy.exit_expression}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold">因子 ID</h3>
-                  <div className="space-y-3">
-                    {signalCatalog.factor_groups.map((group) => (
-                      <div key={group.key} className="rounded border bg-white p-3">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="font-medium">{group.name}</span>
-                          <span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">
-                            {group.model}
-                          </span>
-                        </div>
-                        <div className="grid gap-2 md:grid-cols-2">
-                          {group.factors.map((factor) => (
-                            <div key={factor.id} className="text-sm">
-                              <span className="mr-2 inline-block rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800">
-                                {factor.id}
-                              </span>
-                              <span className="font-medium">{factor.name}</span>
-                              <p className="mt-1 text-gray-600">
-                                {factor.description}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
-            <CardTitle>实盘记录</CardTitle>
+            <CardTitle>历史模拟记录</CardTitle>
+            <p className="text-sm text-gray-600">这里展示旧流程留下的模拟记录。当前监控提醒不会自动生成这些记录，也不代表真实成交。</p>
           </CardHeader>
           <CardContent>
             {isLoading ? (

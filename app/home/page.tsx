@@ -313,12 +313,13 @@ export default function HomePage() {
             </Button>
           </div>
         </div>
-        <div className="flex justify-items-center mb-6">
+        <div className="flex flex-wrap gap-3 mb-6">
+          <Button onClick={() => router.push("/strategies")}>策略模型</Button>
           <Button
             onClick={() => router.push("/backtest")}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            策略实盘
+            历史模拟记录
           </Button>
         </div>
 

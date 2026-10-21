@@ -55,7 +55,7 @@ export function BacktestDetailDialog({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-auto">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>回测详情 - {symbol.toUpperCase()}</CardTitle>
+          <CardTitle>历史模拟记录详情 - {symbol.toUpperCase()}</CardTitle>
           <Button
             variant="ghost"
             size="icon"

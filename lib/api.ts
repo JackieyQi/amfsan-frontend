@@ -72,48 +72,41 @@ export interface CandidateTopPriceNoticeSetting {
 
 
 
-export interface SignalCategory {
-  key: string;
+export type StrategyRule = string | {
+  op: "all" | "any" | "at_least";
+  children: StrategyRule[];
+  minimum?: number;
+};
+
+export interface StrategyCondition {
   name: string;
-  status: string;
+  factor: string;
+  method: string | null;
+  params: Record<string, string | number>;
+  indices: number[] | null;
+  minimum: number;
+  negate: boolean;
+  field: string | null;
+  comparison: string | null;
+  value: string | null;
   description: string;
-}
-
-export interface SignalFactor {
-  id: string;
-  key: string;
-  name: string;
-  description: string;
-}
-
-export interface SignalFactorGroup {
-  key: string;
-  name: string;
-  model: string;
-  factors: SignalFactor[];
-}
-
-export interface SignalStrategy {
-  key: string;
-  name: string;
-  status: string;
-  entry_expression: string;
-  entry_examples?: string[];
-  exit_expression?: string;
-  source: string;
-  admin_display?: {
-    summary: string;
-    show_factor_ids: boolean;
-  };
+  candle_scope: string;
+  review_note: string | null;
 }
 
 export interface SignalCatalog {
   schema_version: string;
-  system_role: string;
   notes: string[];
-  signal_categories: SignalCategory[];
-  factor_groups: SignalFactorGroup[];
-  strategies: SignalStrategy[];
+  conditions: Record<string, StrategyCondition>;
+  models: {
+    key: string;
+    name: string;
+    version: string;
+    status: string;
+    summary: string;
+    entry: StrategyRule;
+    exit: StrategyRule;
+  }[];
   record_status_text: Record<string, string>;
 }
 
