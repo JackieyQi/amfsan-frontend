@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSignalCatalog, isLoggedIn, type SignalCatalog, type StrategyRule } from "@/lib/api";
+import { CustomStrategies } from "@/components/custom-strategies";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -90,20 +91,22 @@ export default function StrategiesPage() {
           </div>
         </div>
         {error && <p role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-red-700">{error}</p>}
+        {catalog && <CustomStrategies />}
         {catalog && <>
           <Card><CardHeader><CardTitle>当前运行方式</CardTitle></CardHeader><CardContent>
             <ul className="list-disc space-y-2 pl-5 text-sm text-gray-600">{catalog.notes.map(note => <li key={note}>{note}</li>)}</ul>
-            <p className="mt-3 text-sm text-gray-600">条件参数和组合规则目前只读。执行与展示共用后端定义；索引 0 表示当前可能尚未收盘的 K 线。</p>
+            <p className="mt-3 text-sm text-gray-600">内置模型只读，自定义模型可以新增和编辑；索引 0 表示当前可能尚未收盘的 K 线。</p>
           </CardContent></Card>
+          <h2 className="text-xl font-semibold">内置策略模型</h2>
           {catalog.models.map(model => <Card key={model.key}>
             <CardHeader>
-              <div className="flex flex-wrap items-center gap-3"><CardTitle>{model.name}</CardTitle><span className="rounded bg-green-100 px-2 py-1 text-xs text-green-800">{model.status}</span></div>
+              <div className="flex flex-wrap items-center gap-3"><CardTitle>{model.name}</CardTitle><span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">{model.status}</span></div>
               <p className="text-sm text-gray-600">{model.summary}</p>
               <p className="text-xs text-gray-500">{model.key} · 规则版本 {model.version}</p>
             </CardHeader>
             <CardContent className="grid items-start gap-6 lg:grid-cols-2">
-              <section><h2 className="mb-3 font-semibold">买入方向 · 入场规则</h2><RuleView rule={model.entry} catalog={catalog} /></section>
-              <section><h2 className="mb-3 font-semibold">卖出方向 · 离场规则</h2><RuleView rule={model.exit} catalog={catalog} /></section>
+              <section><h2 className="mb-3 font-semibold">买入方向 · 入场规则</h2>{model.entry ? <RuleView rule={model.entry} catalog={catalog} /> : <p className="text-sm text-gray-500">尚未迁移为条件组合，请参考原有实现。</p>}</section>
+              <section><h2 className="mb-3 font-semibold">卖出方向 · 离场规则</h2>{model.exit ? <RuleView rule={model.exit} catalog={catalog} /> : <p className="text-sm text-gray-500">尚未迁移为条件组合，请参考原有实现。</p>}</section>
             </CardContent>
           </Card>)}
         </>}

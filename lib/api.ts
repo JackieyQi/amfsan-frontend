@@ -104,8 +104,8 @@ export interface SignalCatalog {
     version: string;
     status: string;
     summary: string;
-    entry: StrategyRule;
-    exit: StrategyRule;
+    entry: StrategyRule | null;
+    exit: StrategyRule | null;
   }[];
   record_status_text: Record<string, string>;
 }
@@ -429,5 +429,36 @@ export async function updateMarketSymbol(
 export async function deleteMarketSymbol(id: number): Promise<{ message: string }> {
   return apiRequest<{ message: string }>("/api/market/plot", {
     method: "DELETE", body: JSON.stringify({ id }),
+  });
+}
+
+export interface CustomCondition {
+  indicator: "macd";
+  interval: "1h" | "4h" | "1d";
+  relation: "above_zero" | "below_zero";
+  candle: "closed" | "current";
+}
+export interface CustomRule {
+  op: "all" | "any";
+  conditions: CustomCondition[];
+}
+export interface CustomDefinition {
+  name: string;
+  buy: CustomRule | null;
+  sell: CustomRule | null;
+}
+export interface CustomStrategy {
+  id: string;
+  version: number;
+  definition: CustomDefinition;
+  update_ts: number;
+}
+export function getCustomStrategies(): Promise<{ strategies: CustomStrategy[] }> {
+  return apiRequest("/api/plot/strategies", { method: "GET" });
+}
+export function saveCustomStrategy(definition: CustomDefinition, original?: CustomStrategy): Promise<CustomStrategy> {
+  return apiRequest("/api/plot/strategies", {
+    method: "POST",
+    body: JSON.stringify({ definition, ...(original ? { id: original.id, version: original.version } : {}) }),
   });
 }
