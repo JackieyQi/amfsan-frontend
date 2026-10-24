@@ -49,6 +49,7 @@ export interface SymbolData {
 }
 
 export interface MonitorData extends SymbolData {
+  strategy_model_key: string | null;
   strategy_model?: { key: string; name: string; version: string };
   id: number;
   user_id: string;
@@ -60,6 +61,7 @@ export interface MonitorData extends SymbolData {
 }
 
 export interface MonitorConfig {
+  strategy_model_key: string;
   monitor_direction: "buy" | "sell";
   take_profit_price?: string | null;
   stop_loss_price?: string | null;
@@ -122,6 +124,7 @@ export interface SignalCatalog {
     version: string;
     status: string;
     summary: string;
+    monitor_directions?: ("buy" | "sell")[];
     entry: StrategyRule | null;
     exit: StrategyRule | null;
   }[];

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getUserInfo,
+  getSignalCatalog,
+  type SignalCatalog,
   logoutUser,
   isLoggedIn,
   getMarketSymbols,
@@ -26,6 +28,8 @@ import {
 } from "@/lib/api";
 import { safeJsonParse, safeText } from "@/lib/security";
 
+
+const MONITOR_MODEL = "model_daily_ema_hourly_macd";
 
 // 定义用户类型
 interface UserInfo {
@@ -54,7 +58,10 @@ export default function HomePage() {
     setIsUpdatingCandidateTopPriceNotice,
   ] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
-  const [direction, setDirection] = useState<"" | "buy" | "sell">("");
+  const [direction, setDirection] = useState<"" | "buy" | "sell">("buy");
+  const [models, setModels] = useState<SignalCatalog["models"]>([]);
+  const [modelKey, setModelKey] = useState(MONITOR_MODEL);
+  const selectedModel = models.find(model => model.key === modelKey);
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [editing, setEditing] = useState<MonitorData | null>(null);
@@ -93,6 +100,8 @@ export default function HomePage() {
     // 获取用户详细信息、当前监控列表、候选币种和候选通知开关
     // Promise.all([fetchUserDetails(), fetchMarketSymbols(), fetchCandidateSymbols(), fetchCandidateTopPriceNoticeSetting()])
     Promise.all([
+      getSignalCatalog().then(catalog => setModels(catalog.models.filter(model => model.monitor_directions?.length)))
+        .catch(() => toast.error("策略模型加载失败，请刷新后重试")),
       fetchMarketSymbols(),
       fetchCandidateSymbols(),
       fetchCandidateTopPriceNoticeSetting(),
@@ -173,7 +182,8 @@ export default function HomePage() {
   const resetForm = () => {
     setEditing(null);
     setNewSymbol("");
-    setDirection("");
+    setDirection("buy");
+    setModelKey(MONITOR_MODEL);
     setStopLoss("");
     setTakeProfit("");
   };
@@ -184,9 +194,14 @@ export default function HomePage() {
       toast.error("请填写币种并选择监控方向");
       return;
     }
+    if (!selectedModel?.monitor_directions?.includes(direction)) {
+      toast.error("请选择支持当前监控方向的已开放模型");
+      return;
+    }
     setIsAddingSymbol(true);
     const config = {
       monitor_direction: direction,
+      strategy_model_key: modelKey,
       stop_loss_price: direction === "sell" ? stopLoss.trim() || null : null,
       take_profit_price: direction === "sell" ? takeProfit.trim() || null : null,
     };
@@ -210,6 +225,7 @@ export default function HomePage() {
     setEditing(item);
     setNewSymbol(item.symbol);
     setDirection(item.monitor_direction);
+    setModelKey(item.strategy_model_key || "");
     setStopLoss(item.stop_loss_price || "");
     setTakeProfit(item.take_profit_price || "");
     document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
@@ -219,7 +235,7 @@ export default function HomePage() {
     resetForm();
     setNewSymbol(symbol);
     document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
-    toast.info("请选择买入或卖出方向，再添加监控");
+    toast.info("已选择买入模型，请确认后添加监控");
   };
 
   const toggleMonitor = async (item: MonitorData) => {
@@ -342,9 +358,32 @@ export default function HomePage() {
                       onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />
                   </label>
                   <label className="space-y-2 text-sm">
+                    <span>策略模型</span>
+                    <select required value={modelKey} className="h-9 w-full rounded-md border bg-white px-3"
+                      onChange={(e) => {
+                        if (direction && !models.find(model => model.key === e.target.value)?.monitor_directions?.includes(direction)) {
+                          toast.error("所选模型不支持当前监控方向，不能切换。请先修改监控方向");
+                          return;
+                        }
+                        setModelKey(e.target.value);
+                      }}>
+                      {!selectedModel && <option value={modelKey} disabled>原模型未开放，请重新选择</option>}
+                      {models.map(model => <option key={model.key} value={model.key}>{model.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
                     <span>监控方向</span>
                     <select required value={direction}
-                      onChange={(e) => setDirection(e.target.value as "" | "buy" | "sell")}
+                      onChange={(e) => {
+                        if (selectedModel && !selectedModel.monitor_directions?.includes(e.target.value as "buy" | "sell")) {
+                          toast.error("所选模型不支持该监控方向，不能切换");
+                          return;
+                        }
+                        if (e.target.value === "buy" && (stopLoss || takeProfit)) {
+                          toast.info("保存后将清除止盈止损价");
+                        }
+                        setDirection(e.target.value as "buy" | "sell");
+                      }}
                       className="h-9 w-full rounded-md border bg-white px-3">
                       <option value="" disabled>请选择方向</option>
                       <option value="buy">监控买入机会</option>
@@ -401,15 +440,15 @@ export default function HomePage() {
                     <tr key={item.id} className="border-t">
                       <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
-                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.is_valid ? "监控中" : "已暂停"}</div>
+                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{!item.strategy_model ? "待重新配置" : item.is_valid ? "监控中" : "已暂停"}</div>
                       </td>
                       <td className="px-3 py-3">{item.strategy_model ? <>
                         <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>
                         <div className="text-xs text-gray-500">{item.monitor_direction === "buy" ? "买入规则" : "卖出规则"} · 版本 {item.strategy_model.version}</div>
-                      </> : <span className="text-gray-500">策略信息未返回</span>}</td>
+                      </> : <span className="text-gray-500">模型未启用，请删除或重新配置</span>}</td>
                       <td className="px-3 py-3">{item.stop_loss_price || "—"} / {item.take_profit_price || "—"}</td>
                       <td className="px-3 py-3">{item.last_signal_ts ? formatTimestamp(item.last_signal_ts) : "暂无"}
-                        <div className="text-xs text-gray-500">{{ model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
+                        <div className="text-xs text-gray-500">{{ model_daily_ema_hourly_macd: "日线 EMA / 小时 MACD", model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
                       </td>
                       <td className="px-3 py-3"><div className="flex justify-end gap-2">
                         <Button size="sm" variant="outline" disabled={busyId !== null || isAddingSymbol} onClick={() => editMonitor(item)}>编辑</Button>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSignalCatalog, isLoggedIn, type SignalCatalog, type SignalFactor, type StrategyRule } from "@/lib/api";
+import { ModelDetails } from "@/components/model-details";
 import { CustomStrategies } from "@/components/custom-strategies";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -143,12 +144,16 @@ export default function StrategiesPage() {
             <CardHeader>
               <div className="flex flex-wrap items-center gap-3"><CardTitle>{model.name}</CardTitle><span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">{model.status}</span></div>
               <p className="text-sm text-gray-600">{model.summary}</p>
+            </CardHeader>
+            <CardContent>
+              <ModelDetails name={model.name}>
               {model.entry || model.exit ? <div className="space-y-2"><p className="text-xs text-gray-500">使用因子</p><IndicatorTags factors={catalog.factors} names={[...new Set([...ruleIndicators(model.entry, catalog), ...ruleIndicators(model.exit, catalog)])]} /></div> : <p className="text-xs text-gray-500">使用因子：待整理</p>}
               <p className="text-xs text-gray-500">{model.key} · 规则版本 {model.version}</p>
-            </CardHeader>
-            <CardContent className="grid items-start gap-6 lg:grid-cols-2">
+              <div className="grid items-start gap-6 lg:grid-cols-2">
               <section><h2 className="mb-3 font-semibold">买入方向 · 入场规则</h2>{model.entry ? <RuleView rule={model.entry} catalog={catalog} /> : <p className="text-sm text-gray-500">尚未迁移为条件组合，请参考原有实现。</p>}</section>
               <section><h2 className="mb-3 font-semibold">卖出方向 · 离场规则</h2>{model.exit ? <RuleView rule={model.exit} catalog={catalog} /> : <p className="text-sm text-gray-500">未定义卖出规则。</p>}</section>
+              </div>
+              </ModelDetails>
             </CardContent>
           </Card>)}
         </>}

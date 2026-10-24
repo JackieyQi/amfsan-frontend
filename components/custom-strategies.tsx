@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { ModelDetails } from "@/components/model-details";
 import { Input } from "@/components/ui/input";
 import { getCustomStrategies, saveCustomStrategy, type CustomStrategy, type CustomDefinition, type CustomRule, type CustomCondition, type SignalCatalog } from "@/lib/api";
 
@@ -91,11 +92,11 @@ export function CustomStrategies({ catalog }: { catalog: SignalCatalog }) {
       </fieldset>
     </CardContent></Card>}
     {loading ? <p>加载我的模型…</p> : !error && items.length === 0 ? <p className="text-gray-500">还没有自定义模型，可以新增 testA 开始配置。</p> : null}
-    {items.map(item => <Card key={item.id}><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>{item.definition.name}</CardTitle><Button variant="outline" disabled={saving || !!draft} onClick={() => edit(item)}>编辑</Button></div><p className="text-sm text-gray-500">自定义 · 未启用 · 版本 {item.version}</p></CardHeader><CardContent className="grid gap-4 md:grid-cols-2">
+    {items.map(item => <Card key={item.id}><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle>{item.definition.name}</CardTitle><Button variant="outline" disabled={saving || !!draft} onClick={() => edit(item)}>编辑</Button></div><p className="text-sm text-gray-500">自定义 · 未启用 · 版本 {item.version}</p></CardHeader><CardContent><ModelDetails name={item.definition.name}><div className="grid gap-4 md:grid-cols-2">
       {(["buy", "sell"] as const).map(direction => {
         const rule = item.definition[direction];
         return <section key={direction}><h3 className="font-medium">{direction === "buy" ? "买入" : "卖出"}规则</h3>{rule ? <><p className="my-2 text-sm text-blue-800">{rule.op === "all" ? "全部满足（AND）" : "任意满足（OR）"}</p><ul className="space-y-2">{rule.conditions.map((c, i) => <li key={i} className="rounded border p-2 text-sm">{describe(c)}</li>)}</ul></> : <p className="mt-2 text-sm text-gray-500">未定义</p>}</section>;
       })}
-    </CardContent></Card>)}
+    </div></ModelDetails></CardContent></Card>)}
   </section>;
 }
