@@ -1,0 +1,805 @@
+{
+  "conditions": {
+    "price_guard": {
+      "name": "4h 价格过热过滤",
+      "factor": "kline_4h_factors",
+      "method": "is_curr_price_away_from_bbupper",
+      "params": {
+        "tolerance": "0.01"
+      },
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": true,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "两根收盘价均未超过各自布林上轨的 1%。",
+      "candle_scope": "当前及前一根 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线",
+          "布林带"
+        ],
+        "interval": "4h",
+        "operation": "收盘价不超过上轨容差",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "容差",
+            "value": "0.01",
+            "unit": "上轨价格的比例"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "当前及前一根 4h K 线"
+        },
+        "requirement": "全部不触发价格过热（对任一过热的结果取反）",
+        "change_count": null
+      }
+    },
+    "daily_trend": {
+      "name": "日线 EMA 多头排列",
+      "factor": "kline_1d_factors",
+      "method": "is_ema_bullish_stack",
+      "params": {
+        "index": 0,
+        "window_size": 1
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "EMA12 > EMA26。",
+      "candle_scope": "当前日线，可能未收盘",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "EMA"
+        ],
+        "interval": "1d",
+        "operation": "EMA12 > EMA26",
+        "indicator_parameters": [
+          {
+            "label": "均线周期",
+            "value": "12 / 26"
+          }
+        ],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0
+          ],
+          "count": 1,
+          "includes_current": true,
+          "scope": "当前日线，可能未收盘"
+        },
+        "requirement": "全部满足",
+        "change_count": null
+      }
+    },
+    "bullish_ratio": {
+      "name": "4h 阳线比例",
+      "factor": "kline_4h_factors",
+      "method": "is_bullish_k",
+      "params": {},
+      "indices": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "minimum": 3,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "前四根至少三根阳线（原规则为比例 ≥ 70%）。",
+      "candle_scope": "前四根已收盘 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线"
+        ],
+        "interval": "4h",
+        "operation": "阳线（收盘价 > 开盘价）",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "count": 4,
+          "includes_current": false,
+          "scope": "前四根已收盘 4h K 线"
+        },
+        "requirement": "至少满足 3 / 4 项",
+        "change_count": null
+      }
+    },
+    "above_ema": {
+      "name": "4h 连续站上 EMA12",
+      "factor": "kline_4h_factors",
+      "method": "is_ema12_continue_lt_close",
+      "params": {
+        "index": 1,
+        "window_size": 3
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "连续三根收盘价 > 对应 EMA12。",
+      "candle_scope": "前三根已收盘 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线",
+          "EMA"
+        ],
+        "interval": "4h",
+        "operation": "收盘价 > EMA12",
+        "indicator_parameters": [
+          {
+            "label": "均线周期",
+            "value": 12
+          }
+        ],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            1,
+            2,
+            3
+          ],
+          "count": 3,
+          "includes_current": false,
+          "scope": "前三根已收盘 4h K 线"
+        },
+        "requirement": "全部满足",
+        "change_count": null
+      }
+    },
+    "near_upper": {
+      "name": "4h 贴近布林上轨",
+      "factor": "kline_4h_factors",
+      "method": "is_near_upper",
+      "params": {
+        "tolerance": "0.03"
+      },
+      "indices": [
+        1,
+        2,
+        3
+      ],
+      "minimum": 2,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "三根至少两根满足：收盘价不低于中轨，且（上轨－收盘价）/（上轨－中轨）≤ 0.03。",
+      "candle_scope": "前三根已收盘 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线",
+          "布林带"
+        ],
+        "interval": "4h",
+        "operation": "收盘价 ≥ 中轨，且归一化上轨距离 ≤ 容差",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "容差",
+            "value": "0.03",
+            "unit": "上轨与中轨间距的比例"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            1,
+            2,
+            3
+          ],
+          "count": 3,
+          "includes_current": false,
+          "scope": "前三根已收盘 4h K 线"
+        },
+        "requirement": "至少满足 2 / 3 项",
+        "change_count": null
+      }
+    },
+    "widen": {
+      "name": "4h 布林带宽扩大",
+      "factor": "kline_4h_factors",
+      "method": "is_boll_widen",
+      "params": {
+        "index": 1,
+        "window_size": 3
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "比较索引 1→2、2→3、3→4、4→5，连续四次带宽扩大。",
+      "candle_scope": "前五根已收盘 4h K 线",
+      "review_note": "原函数 window_size=3 实际比较四次；保留现有行为，是否改为三次需手动决定。",
+      "structure": {
+        "factors": [
+          "布林带"
+        ],
+        "interval": "4h",
+        "operation": "带宽按时间顺序严格扩大",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "count": 5,
+          "includes_current": false,
+          "scope": "前五根已收盘 4h K 线"
+        },
+        "requirement": "连续 4 次变化全部满足",
+        "change_count": 4
+      }
+    },
+    "hour_bullish": {
+      "name": "1h 连续阳线",
+      "factor": "kline_1h_factors",
+      "method": "is_bullish_k",
+      "params": {},
+      "indices": [
+        0,
+        1,
+        2
+      ],
+      "minimum": 3,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "最近三根全部为阳线。",
+      "candle_scope": "包含当前未收盘 1h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线"
+        ],
+        "interval": "1h",
+        "operation": "阳线（收盘价 > 开盘价）",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "count": 3,
+          "includes_current": true,
+          "scope": "包含当前未收盘 1h K 线"
+        },
+        "requirement": "全部满足",
+        "change_count": null
+      }
+    },
+    "hour_upper": {
+      "name": "1h 沿布林上轨",
+      "factor": "kline_1h_factors",
+      "method": "is_along_upper_band",
+      "params": {
+        "n": 3,
+        "tolerance": "0.2"
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "最近三根至少两根贴轨；距离按上轨与中轨之间的宽度归一化，容差 0.2。",
+      "candle_scope": "包含当前未收盘 1h K 线",
+      "review_note": "原注释写连续三根，实际只需两根；容差不是币价的 20%。保留实际行为。",
+      "structure": {
+        "factors": [
+          "K 线",
+          "布林带"
+        ],
+        "interval": "1h",
+        "operation": "收盘价 ≥ 中轨，且归一化上轨距离 ≤ 容差",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "容差",
+            "value": "0.2",
+            "unit": "上轨与中轨间距的比例"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "count": 3,
+          "includes_current": true,
+          "scope": "包含当前未收盘 1h K 线"
+        },
+        "requirement": "至少满足 2 / 3 项",
+        "change_count": null
+      }
+    },
+    "macd_down": {
+      "name": "4h MACD 连续减小",
+      "factor": "macd_4h_factors",
+      "method": "is_continue_down",
+      "params": {
+        "index": 0,
+        "window_size": 3
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "最近三个 MACD 值按时间顺序严格递减。",
+      "candle_scope": "包含当前未收盘 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "MACD"
+        ],
+        "interval": "4h",
+        "operation": "MACD 柱值按时间顺序严格递减",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "count": 3,
+          "includes_current": true,
+          "scope": "包含当前未收盘 4h K 线"
+        },
+        "requirement": "连续 2 次变化全部满足",
+        "change_count": 2
+      }
+    },
+    "kdj_cross": {
+      "name": "4h KDJ 死叉",
+      "factor": "kdj_4h_factors",
+      "method": "is_death_cross",
+      "params": {},
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "当前或前一根出现 K 下穿 D。",
+      "candle_scope": "触发位置为当前或前一根；交叉还读取更早一根",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "KDJ"
+        ],
+        "interval": "4h",
+        "operation": "前一根 K > D，本根 K < D",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "触发位置为当前或前一根；交叉还读取更早一根"
+        },
+        "requirement": "至少满足 1 / 2 项",
+        "change_count": null
+      }
+    },
+    "j_down": {
+      "name": "4h J 值连续下行",
+      "factor": "kdj_4h_factors",
+      "method": "is_j_continue_down",
+      "params": {
+        "index": 0,
+        "window_size": 2
+      },
+      "indices": null,
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "最近三个 J 值按时间顺序连续两次严格下降。",
+      "candle_scope": "包含当前未收盘 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "KDJ"
+        ],
+        "interval": "4h",
+        "operation": "J 值按时间顺序严格递减",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0,
+            1,
+            2
+          ],
+          "count": 3,
+          "includes_current": true,
+          "scope": "包含当前未收盘 4h K 线"
+        },
+        "requirement": "连续 2 次变化全部满足",
+        "change_count": 2
+      }
+    },
+    "j_low": {
+      "name": "4h 当前 J 值低于阈值",
+      "factor": "kdj_4h_factors",
+      "method": null,
+      "params": {},
+      "indices": [
+        0
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": "kdj_list.j_val",
+      "comparison": "lt",
+      "value": "70",
+      "description": "",
+      "candle_scope": "当前 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "KDJ"
+        ],
+        "interval": "4h",
+        "operation": "J 值小于阈值",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "阈值",
+            "value": "70"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0
+          ],
+          "count": 1,
+          "includes_current": true,
+          "scope": "当前 4h K 线"
+        },
+        "requirement": "全部满足",
+        "change_count": null
+      }
+    },
+    "rsi_speed": {
+      "name": "4h RSI 变化加速",
+      "factor": "rsi_4h_factors",
+      "method": "is_fast_down",
+      "params": {
+        "threshold": "1.3"
+      },
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "当前或前一根 RSI 绝对变化量超过此前四次绝对变化均值的 1.3 倍。",
+      "candle_scope": "包含当前 4h K 线，最远读取索引 6",
+      "review_note": "is_fast_down 实际使用绝对变化量，快速上涨也可能满足；本次不改为仅下跌。",
+      "structure": {
+        "factors": [
+          "RSI"
+        ],
+        "interval": "4h",
+        "operation": "绝对变化量 > 此前变化均值 × 倍数",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "变化倍数",
+            "value": "1.3"
+          },
+          {
+            "label": "基准变化次数",
+            "value": 4
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "包含当前 4h K 线，最远读取索引 6"
+        },
+        "requirement": "至少满足 1 / 2 项",
+        "change_count": null
+      }
+    },
+    "rsi_low": {
+      "name": "4h 当前 RSI 低于阈值",
+      "factor": "rsi_4h_factors",
+      "method": null,
+      "params": {},
+      "indices": [
+        0
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": "rsi_list.rsi",
+      "comparison": "lt",
+      "value": "70",
+      "description": "",
+      "candle_scope": "当前 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "RSI"
+        ],
+        "interval": "4h",
+        "operation": "RSI 小于阈值",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "阈值",
+            "value": "70"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0
+          ],
+          "count": 1,
+          "includes_current": true,
+          "scope": "当前 4h K 线"
+        },
+        "requirement": "全部满足",
+        "change_count": null
+      }
+    },
+    "engulfing": {
+      "name": "4h 看跌吞没",
+      "factor": "kline_4h_factors",
+      "method": "is_bearish_engulfing_k",
+      "params": {},
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "",
+      "candle_scope": "当前或前一根；形态还读取更早一根",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线"
+        ],
+        "interval": "4h",
+        "operation": "看跌吞没形态",
+        "indicator_parameters": [],
+        "parameters": [],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "当前或前一根；形态还读取更早一根"
+        },
+        "requirement": "至少满足 1 / 2 项",
+        "change_count": null
+      }
+    },
+    "high_away": {
+      "name": "4h 最高价远离上轨",
+      "factor": "kline_4h_factors",
+      "method": "is_high_price_away_from_bbupper",
+      "params": {
+        "tolerance": "0.08"
+      },
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": null,
+      "comparison": null,
+      "value": null,
+      "description": "当前或前一根最高价超过对应上轨的 8%。",
+      "candle_scope": "当前及前一根 4h K 线",
+      "review_note": null,
+      "structure": {
+        "factors": [
+          "K 线",
+          "布林带"
+        ],
+        "interval": "4h",
+        "operation": "最高价 > 上轨 ×（1 + 容差）",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "容差",
+            "value": "0.08",
+            "unit": "上轨价格的比例"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "当前及前一根 4h K 线"
+        },
+        "requirement": "至少满足 1 / 2 项",
+        "change_count": null
+      }
+    },
+    "rsi_high": {
+      "name": "4h RSI 高位",
+      "factor": "rsi_4h_factors",
+      "method": null,
+      "params": {},
+      "indices": [
+        0,
+        1
+      ],
+      "minimum": 1,
+      "negate": false,
+      "field": "rsi_list.rsi",
+      "comparison": "gt",
+      "value": "85",
+      "description": "当前或前一根 RSI > 85。",
+      "candle_scope": "当前及前一根 4h K 线",
+      "review_note": "最高价远离上轨和 RSI > 85 可以发生在不同 K 线上，沿用原逻辑。",
+      "structure": {
+        "factors": [
+          "RSI"
+        ],
+        "interval": "4h",
+        "operation": "RSI 大于阈值",
+        "indicator_parameters": [],
+        "parameters": [
+          {
+            "label": "阈值",
+            "value": "85"
+          }
+        ],
+        "sampling": {
+          "indices": [
+            0,
+            1
+          ],
+          "count": 2,
+          "includes_current": true,
+          "scope": "当前及前一根 4h K 线"
+        },
+        "requirement": "至少满足 1 / 2 项",
+        "change_count": null
+      }
+    }
+  },
+  "models": [
+    {
+      "key": "model_top_rise",
+      "name": "布林贴顶加速上涨模型",
+      "version": "1",
+      "status": "当前监控使用",
+      "summary": "日线趋势过滤，4h 强势结构确认，1h 入场触发。买入和卖出分别使用以下规则。",
+      "entry": {
+        "op": "all",
+        "children": [
+          "price_guard",
+          "daily_trend",
+          "bullish_ratio",
+          "above_ema",
+          "near_upper",
+          "widen",
+          {
+            "op": "any",
+            "children": [
+              "hour_bullish",
+              "hour_upper"
+            ]
+          }
+        ]
+      },
+      "exit": {
+        "op": "all",
+        "children": [
+          {
+            "op": "at_least",
+            "children": [
+              "macd_down",
+              {
+                "op": "all",
+                "children": [
+                  "kdj_cross",
+                  "j_down",
+                  "j_low"
+                ]
+              },
+              {
+                "op": "all",
+                "children": [
+                  "rsi_speed",
+                  "rsi_low"
+                ]
+              }
+            ],
+            "minimum": 2
+          },
+          {
+            "op": "any",
+            "children": [
+              "engulfing",
+              {
+                "op": "all",
+                "children": [
+                  "high_away",
+                  "rsi_high"
+                ]
+              },
+              "kdj_cross"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "schema_version": "preview",
+  "record_status_text": {},
+  "notes": [
+    "当前监控固定使用布林贴顶加速上涨模型，按用户选择的方向判断并通知。",
+    "自定义模型尚未接入监控。"
+  ]
+}
