@@ -4,6 +4,7 @@ import type React from "react";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -391,6 +392,7 @@ export default function HomePage() {
                   <thead><tr className="bg-gray-100">
                     <th className="px-3 py-2 text-left">币种 / 用户</th>
                     <th className="px-3 py-2 text-left">方向 / 状态</th>
+                    <th className="px-3 py-2 text-left">策略模型</th>
                     <th className="px-3 py-2 text-left">止损 / 止盈</th>
                     <th className="px-3 py-2 text-left">最近提醒</th>
                     <th className="px-3 py-2 text-right">操作</th>
@@ -401,6 +403,10 @@ export default function HomePage() {
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
                         <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.is_valid ? "监控中" : "已暂停"}</div>
                       </td>
+                      <td className="px-3 py-3">{item.strategy_model ? <>
+                        <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>
+                        <div className="text-xs text-gray-500">{item.monitor_direction === "buy" ? "买入规则" : "卖出规则"} · 版本 {item.strategy_model.version}</div>
+                      </> : <span className="text-gray-500">策略信息未返回</span>}</td>
                       <td className="px-3 py-3">{item.stop_loss_price || "—"} / {item.take_profit_price || "—"}</td>
                       <td className="px-3 py-3">{item.last_signal_ts ? formatTimestamp(item.last_signal_ts) : "暂无"}
                         <div className="text-xs text-gray-500">{{ model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>

@@ -49,6 +49,7 @@ export interface SymbolData {
 }
 
 export interface MonitorData extends SymbolData {
+  strategy_model?: { key: string; name: string; version: string };
   id: number;
   user_id: string;
   monitor_direction: "buy" | "sell";
@@ -79,6 +80,16 @@ export type StrategyRule = string | {
 };
 
 export interface StrategyCondition {
+  structure?: {
+    factors: string[];
+    interval: string;
+    operation: string;
+    indicator_parameters: { label: string; value: string | number; unit?: string }[];
+    parameters: { label: string; value: string | number; unit?: string }[];
+    sampling: { indices: number[]; count: number; includes_current: boolean; scope: string };
+    requirement: string;
+    change_count: number | null;
+  };
   name: string;
   factor: string;
   method: string | null;

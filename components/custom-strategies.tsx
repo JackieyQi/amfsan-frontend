@@ -46,10 +46,15 @@ export function CustomStrategies() {
   };
   return <section className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-xl font-semibold">我的策略模型</h2><p className="text-sm text-gray-600">仅自己可见和编辑。保存不会启用或替换当前监控策略。</p></div>
-      <div className="flex gap-2"><Button variant="outline" disabled={loading || saving || !!draft} onClick={refresh}>刷新列表</Button><Button disabled={saving || !!draft} onClick={() => edit()}>新增模型</Button></div>
+      <div><h2 className="text-xl font-semibold">我的策略模型</h2><p className="text-sm text-gray-600">可用因子：MACD。仅自己可见和编辑，保存不会启用或替换当前监控策略。</p></div>
+      <div className="flex gap-2"><Button disabled={saving || !!draft} onClick={() => edit()}>新增模型</Button></div>
     </div>
-    {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
+    {error && <div role="alert" className="space-y-2 rounded bg-red-50 p-3 text-red-700">
+      <p>{error}</p>
+      <Button variant="outline" disabled={loading || saving} onClick={() => {
+        setDraft(null); setOriginal(undefined); setSaved(""); void refresh();
+      }}>{draft ? "放弃本次编辑并重新加载" : "重试"}</Button>
+    </div>}
     {saved && <p role="status" className="text-green-700">{saved}</p>}
     {draft && <Card><CardHeader><CardTitle>{original ? "编辑模型" : "新增模型"}</CardTitle></CardHeader><CardContent>
       <fieldset disabled={saving} className="space-y-4">
