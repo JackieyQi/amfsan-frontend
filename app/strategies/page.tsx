@@ -2,19 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSignalCatalog, isLoggedIn, type SignalCatalog, type StrategyRule } from "@/lib/api";
+import { getSignalCatalog, isLoggedIn, type SignalCatalog, type SignalFactor, type StrategyRule } from "@/lib/api";
 import { CustomStrategies } from "@/components/custom-strategies";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const indicators = [
-  { name: "K 线", description: "观察价格形态，例如阳线比例、连续阳线和看跌吞没。" },
-  { name: "EMA", description: "观察趋势，例如 EMA12 与 EMA26 排列、价格站上均线。" },
-  { name: "布林带", description: "观察价格位置与波动，例如贴近上轨、带宽扩大。" },
-  { name: "MACD", description: "观察动能变化，例如柱值正负、连续减小。" },
-  { name: "KDJ", description: "观察交叉与 J 值变化，例如死叉、J 值下行。" },
-  { name: "RSI", description: "观察相对强弱，例如高位、低于阈值或变化加速。" },
-];
 
 function ruleIndicators(rule: StrategyRule | null, catalog: SignalCatalog): string[] {
   if (!rule) return [];
@@ -24,8 +15,8 @@ function ruleIndicators(rule: StrategyRule | null, catalog: SignalCatalog): stri
   return condition.structure?.factors || [];
 }
 
-function IndicatorTags({ names }: { names: string[] }) {
-  return <div className="flex flex-wrap gap-2">{indicators.filter(indicator => names.includes(indicator.name)).map(({ name }) => <span key={name} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-800">{name}</span>)}</div>;
+function IndicatorTags({ names, factors }: { names: string[]; factors: SignalFactor[] }) {
+  return <div className="flex flex-wrap gap-2">{factors.filter(indicator => names.includes(indicator.name)).map(({ name }) => <span key={name} className="rounded bg-blue-50 px-2 py-1 text-xs text-blue-800">{name}</span>)}</div>;
 }
 
 function RuleView({ rule, catalog }: { rule: StrategyRule; catalog: SignalCatalog }) {
@@ -36,7 +27,7 @@ function RuleView({ rule, catalog }: { rule: StrategyRule; catalog: SignalCatalo
       <details className="rounded-lg border bg-white p-3">
         <summary className="cursor-pointer rounded font-medium focus-visible:outline-2 focus-visible:outline-blue-600">
           <span>{condition.name}</span>
-          <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">{indicators.filter(indicator => ruleIndicators(rule, catalog).includes(indicator.name)).map(({ name }) => <span key={name} className="rounded bg-blue-50 px-2 py-1 text-xs font-normal text-blue-800">{name}</span>)}</span>
+          <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">{catalog.factors.filter(indicator => ruleIndicators(rule, catalog).includes(indicator.name)).map(({ name }) => <span key={name} className="rounded bg-blue-50 px-2 py-1 text-xs font-normal text-blue-800">{name}</span>)}</span>
           {condition.structure && <span className="ml-2 text-xs font-normal text-gray-500">{condition.negate ? "均不触发过热" : condition.structure.requirement === "全部满足" ? `${condition.structure.sampling.count} 个取样全部满足` : condition.structure.requirement}</span>}
           {(condition.review_note || !condition.structure) && <span className="ml-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">待确认</span>}
         </summary>
@@ -94,7 +85,7 @@ export default function StrategiesPage() {
     setError("");
     try {
       const result = await getSignalCatalog();
-      if (!result.models || !result.conditions) throw new Error("策略定义接口尚未更新，请先部署配套后端。");
+      if (!result.models || !result.conditions || !Array.isArray(result.factors)) throw new Error("策略定义接口尚未更新，请先部署配套后端。");
       setCatalog(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "获取策略定义失败");
@@ -134,14 +125,14 @@ export default function StrategiesPage() {
         {catalog && <Card>
           <CardHeader><CardTitle>基础因子</CardTitle><p className="text-sm text-gray-600">系统提供固定的指标与价格因子，判断条件再组合成策略的买入、卖出规则。</p></CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{indicators.map(indicator => <div key={indicator.name} className="space-y-2 rounded-lg border p-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{catalog.factors.map(indicator => <div key={indicator.key} className="space-y-2 rounded-lg border p-3">
               <h3 className="font-semibold">{indicator.name}</h3>
               <p className="text-sm text-gray-600">{indicator.description}</p>
             </div>)}</div>
             <p className="mt-4 text-sm text-gray-600">下方每条条件标注关联因子；直接比较价格与指标的条件会同时标注 K 线和对应指标。</p>
           </CardContent>
         </Card>}
-        {catalog && !preview && <CustomStrategies />}
+        {catalog && !preview && <CustomStrategies catalog={catalog} />}
         {catalog && <>
           <Card><CardHeader><CardTitle>当前运行方式</CardTitle></CardHeader><CardContent>
             <ul className="list-disc space-y-2 pl-5 text-sm text-gray-600">{catalog.notes.map(note => <li key={note}>{note}</li>)}</ul>
@@ -152,12 +143,12 @@ export default function StrategiesPage() {
             <CardHeader>
               <div className="flex flex-wrap items-center gap-3"><CardTitle>{model.name}</CardTitle><span className="rounded bg-gray-100 px-2 py-1 text-xs text-gray-700">{model.status}</span></div>
               <p className="text-sm text-gray-600">{model.summary}</p>
-              {model.entry || model.exit ? <div className="space-y-2"><p className="text-xs text-gray-500">使用因子</p><IndicatorTags names={[...new Set([...ruleIndicators(model.entry, catalog), ...ruleIndicators(model.exit, catalog)])]} /></div> : <p className="text-xs text-gray-500">使用因子：待整理</p>}
+              {model.entry || model.exit ? <div className="space-y-2"><p className="text-xs text-gray-500">使用因子</p><IndicatorTags factors={catalog.factors} names={[...new Set([...ruleIndicators(model.entry, catalog), ...ruleIndicators(model.exit, catalog)])]} /></div> : <p className="text-xs text-gray-500">使用因子：待整理</p>}
               <p className="text-xs text-gray-500">{model.key} · 规则版本 {model.version}</p>
             </CardHeader>
             <CardContent className="grid items-start gap-6 lg:grid-cols-2">
               <section><h2 className="mb-3 font-semibold">买入方向 · 入场规则</h2>{model.entry ? <RuleView rule={model.entry} catalog={catalog} /> : <p className="text-sm text-gray-500">尚未迁移为条件组合，请参考原有实现。</p>}</section>
-              <section><h2 className="mb-3 font-semibold">卖出方向 · 离场规则</h2>{model.exit ? <RuleView rule={model.exit} catalog={catalog} /> : <p className="text-sm text-gray-500">尚未迁移为条件组合，请参考原有实现。</p>}</section>
+              <section><h2 className="mb-3 font-semibold">卖出方向 · 离场规则</h2>{model.exit ? <RuleView rule={model.exit} catalog={catalog} /> : <p className="text-sm text-gray-500">未定义卖出规则。</p>}</section>
             </CardContent>
           </Card>)}
         </>}

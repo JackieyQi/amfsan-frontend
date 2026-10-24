@@ -3,14 +3,17 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getCustomStrategies, saveCustomStrategy, type CustomStrategy, type CustomDefinition, type CustomRule, type CustomCondition } from "@/lib/api";
+import { getCustomStrategies, saveCustomStrategy, type CustomStrategy, type CustomDefinition, type CustomRule, type CustomCondition, type SignalCatalog } from "@/lib/api";
 
-const newCondition = (): CustomCondition => ({ indicator: "macd", interval: "4h", relation: "above_zero", candle: "closed" });
-const newRule = (): CustomRule => ({ op: "all", conditions: [newCondition()] });
-const describe = (c: CustomCondition) => `${c.interval} MACD 柱值 · ${c.relation === "above_zero" ? "零轴上方（> 0）" : "零轴下方（< 0）"} · ${c.candle === "closed" ? "最近已收盘" : "当前未收盘"}`;
 const selectClass = "rounded border bg-white p-2 text-sm";
 
-export function CustomStrategies() {
+export function CustomStrategies({ catalog }: { catalog: SignalCatalog }) {
+  const options = Object.entries(catalog.conditions);
+  const newCondition = (): CustomCondition => options[0]?.[0] || "";
+  const newRule = (): CustomRule => ({ op: "all", conditions: [newCondition()] });
+  const describe = (c: CustomCondition) => typeof c === "string"
+    ? catalog.conditions[c]?.name || `条件已不可用：${c}`
+    : `${c.interval} MACD 柱值 · ${c.relation === "above_zero" ? "> 0" : "< 0"} · ${c.candle === "closed" ? "最近已收盘" : "当前未收盘"}（旧配置）`;
   const [items, setItems] = useState<CustomStrategy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -46,7 +49,7 @@ export function CustomStrategies() {
   };
   return <section className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-xl font-semibold">我的策略模型</h2><p className="text-sm text-gray-600">可用因子：MACD。仅自己可见和编辑，保存不会启用或替换当前监控策略。</p></div>
+      <div><h2 className="text-xl font-semibold">我的策略模型</h2><p className="text-sm text-gray-600">从系统条件库选择条件并组合。仅自己可见和编辑，保存不会启用或替换当前监控策略。</p></div>
       <div className="flex gap-2"><Button disabled={saving || !!draft} onClick={() => edit()}>新增模型</Button></div>
     </div>
     {error && <div role="alert" className="space-y-2 rounded bg-red-50 p-3 text-red-700">
@@ -66,12 +69,16 @@ export function CustomStrategies() {
             {rule ? <>
               <label className="flex items-center gap-2">组合方式<select className={selectClass} value={rule.op} onChange={e => changeRule(direction, { ...rule, op: e.target.value as CustomRule["op"] })}><option value="all">全部满足（AND）</option><option value="any">任意满足（OR）</option></select></label>
               {rule.conditions.map((condition, index) => {
-                const update = (patch: Partial<CustomCondition>) => changeRule(direction, { ...rule, conditions: rule.conditions.map((c, i) => i === index ? { ...c, ...patch } : c) });
-                return <div key={index} className="flex flex-wrap items-center gap-2 rounded bg-gray-50 p-3">
-                  <span className="text-sm">条件 {index + 1} · MACD 柱值</span>
-                  <select aria-label={`条件 ${index + 1} 周期`} className={selectClass} value={condition.interval} onChange={e => update({ interval: e.target.value as CustomCondition["interval"] })}>{["1h", "4h", "1d"].map(value => <option key={value}>{value}</option>)}</select>
-                  <select aria-label={`条件 ${index + 1} 判断`} className={selectClass} value={condition.relation} onChange={e => update({ relation: e.target.value as CustomCondition["relation"] })}><option value="above_zero">零轴上方（&gt; 0）</option><option value="below_zero">零轴下方（&lt; 0）</option></select>
-                  <select aria-label={`条件 ${index + 1} K 线取样`} className={selectClass} value={condition.candle} onChange={e => update({ candle: e.target.value as CustomCondition["candle"] })}><option value="closed">最近已收盘</option><option value="current">当前未收盘</option></select>
+                const selected = typeof condition === "string" ? catalog.conditions[condition] : null;
+                return <div key={index} className="space-y-2 rounded bg-gray-50 p-3">
+                  <label className="flex flex-wrap items-center gap-2"><span className="text-sm">条件 {index + 1}</span>
+                  <select aria-label={`条件 ${index + 1}`} className={selectClass} value={typeof condition === "string" ? condition : "__legacy__"} onChange={e => changeRule(direction, { ...rule, conditions: rule.conditions.map((c, i) => i === index ? e.target.value : c) })}>
+                    {typeof condition !== "string" && <option value="__legacy__">{describe(condition)}</option>}
+                    {typeof condition === "string" && !selected && <option value={condition}>{describe(condition)}</option>}
+                    {options.map(([key, value]) => <option key={key} value={key}>{value.name}</option>)}
+                  </select></label>
+                  {selected && <p className="text-sm text-gray-600">{selected.description || selected.structure?.operation} · {selected.candle_scope}</p>}
+                  {selected?.review_note && <p className="text-sm text-amber-800">待确认：{selected.review_note}</p>}
                   <Button variant="outline" size="sm" disabled={rule.conditions.length === 1} onClick={() => changeRule(direction, { ...rule, conditions: rule.conditions.filter((_, i) => i !== index) })}>移除条件</Button>
                 </div>;
               })}
@@ -79,7 +86,7 @@ export function CustomStrategies() {
             </> : <p className="text-sm text-gray-500">未定义此方向，不产生对应信号。</p>}
           </div>;
         })}
-        <p className="text-sm text-gray-600">MACD 阈值固定为 0，等于零不满足正负条件。当前未收盘 K 线的判断可能随行情变化。</p>
+        <p className="text-sm text-gray-600">所选条件使用系统定义的参数和取样范围；当前未收盘 K 线的判断可能随行情变化。旧配置保留原含义，可逐项替换为条件库条件。</p>
         <div className="flex gap-2"><Button onClick={save}>{saving ? "保存中…" : "保存模型"}</Button><Button variant="outline" onClick={() => { setDraft(null); setError(""); }}>取消</Button></div>
       </fieldset>
     </CardContent></Card>}

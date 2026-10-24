@@ -93,7 +93,7 @@ export interface StrategyCondition {
   name: string;
   factor: string;
   method: string | null;
-  params: Record<string, string | number>;
+  params: Record<string, string | number | boolean>;
   indices: number[] | null;
   minimum: number;
   negate: boolean;
@@ -105,7 +105,14 @@ export interface StrategyCondition {
   review_note: string | null;
 }
 
+export interface SignalFactor {
+  key: string;
+  name: string;
+  description: string;
+}
+
 export interface SignalCatalog {
+  factors: SignalFactor[];
   schema_version: string;
   notes: string[];
   conditions: Record<string, StrategyCondition>;
@@ -443,7 +450,8 @@ export async function deleteMarketSymbol(id: number): Promise<{ message: string 
   });
 }
 
-export interface CustomCondition {
+export type CustomCondition = string | LegacyCustomCondition;
+export interface LegacyCustomCondition {
   indicator: "macd";
   interval: "1h" | "4h" | "1d";
   relation: "above_zero" | "below_zero";
