@@ -107,7 +107,10 @@ export default function HomePage() {
     // 获取用户详细信息、当前监控列表、候选币种和候选通知开关
     // Promise.all([fetchUserDetails(), fetchMarketSymbols(), fetchCandidateSymbols(), fetchCandidateTopPriceNoticeSetting()])
     Promise.all([
-      getMonitorOptions().then(setMonitorOptions).catch(() => toast.error("监控权限加载失败，请刷新后重试")),
+      getMonitorOptions().then(async options => {
+        setMonitorOptions(options);
+        if (options.can_view_spot) await fetchSpot();
+      }).catch(() => toast.error("监控权限加载失败，请刷新后重试")),
       getSignalCatalog().then(catalog => setModels(catalog.models.filter(model => model.monitor_directions?.length)))
         .catch(() => toast.error("策略模型加载失败，请刷新后重试")),
       fetchMarketSymbols(),
@@ -128,18 +131,14 @@ export default function HomePage() {
     } finally {
       setLoadingSpot(false);
     }
-    await fetchMarketSymbols();
   };
 
-  useEffect(() => {
-    if (!monitorOptions) return;
-    if (monitorOptions.can_view_spot) void fetchSpot();
-    const timer = setInterval(() => {
-      if (monitorOptions.can_view_spot) void fetchSpot();
-      else void fetchMarketSymbols();
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [monitorOptions]);
+  const refreshMonitorData = async () => {
+    await Promise.all([
+      fetchMarketSymbols(),
+      ...(monitorOptions?.can_view_spot ? [fetchSpot()] : []),
+    ]);
+  };
 
   const fetchUserDetails = async () => {
     try {
@@ -247,7 +246,7 @@ export default function HomePage() {
       }
       toast.success(editing ? "监控配置已更新" : "已添加监控");
       resetForm();
-      await fetchMarketSymbols();
+      await refreshMonitorData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存失败");
     } finally {
@@ -277,7 +276,7 @@ export default function HomePage() {
     try {
       await updateMarketSymbol(item.id, { is_valid: !item.is_valid });
       toast.success(item.is_valid ? "已暂停检查和通知" : "已恢复监控");
-      await fetchMarketSymbols();
+      await refreshMonitorData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "更新失败");
     } finally {
@@ -309,6 +308,7 @@ export default function HomePage() {
       setSymbols((prev) => prev.filter((row) => row.id !== item.id));
       if (editing?.id === item.id) resetForm();
       toast.success("已移除监控，历史数据已保留");
+      await refreshMonitorData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "移除失败");
     } finally {
@@ -378,10 +378,10 @@ export default function HomePage() {
 
         {monitorOptions?.can_view_spot && <Card className="mb-6">
           <CardHeader><div className="flex justify-between items-center"><CardTitle>币安现货持仓（USDT 交易对）</CardTitle>
-            <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void fetchSpot(); }}>{loadingSpot ? "同步中…" : "刷新持仓"}</Button>
+            <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void refreshMonitorData(); }}>{loadingSpot ? "读取中…" : "刷新持仓"}</Button>
           </div></CardHeader>
           <CardContent>
-            <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已同步，每 30 秒刷新", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "当前后端进程未读取到完整的币安密钥，修改环境文件后需重建容器", pending: "密钥已读取，等待首次持仓同步", config_mismatch: "持仓缓存与当前密钥不一致，请检查各后端服务配置并统一重建" })[spot.status]}
+            <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已读取后台持仓快照", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "当前后端进程未读取到完整的币安密钥，修改环境文件后需重建容器", pending: "密钥已读取，等待首次持仓同步", config_mismatch: "持仓缓存与当前密钥不一致，请检查各后端服务配置并统一重建" })[spot.status]}
               {spot?.updated_ts ? ` · 最近成功同步：${formatTimestamp(spot.updated_ts)}` : ""}</p>
             {spot?.status === "unconfigured" && !!spot.missing_credentials?.length &&
               <p className="text-sm mb-3 text-amber-700">未读取到：{spot.missing_credentials.join("、")}</p>}
@@ -484,10 +484,11 @@ export default function HomePage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>当前监控列表</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => fetchMarketSymbols()}>刷新</Button>
+              <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void refreshMonitorData(); }}>刷新</Button>
             </div>
           </CardHeader>
           <CardContent>
+            <p className="mb-3 text-xs text-gray-500">以下为上次读取的状态。后台持续监控；页面在打开、手动刷新或操作成功后更新。</p>
             {symbols.length === 0 ? <div className="py-4 text-center text-gray-500">暂无监控，请添加币种并选择方向</div> : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
