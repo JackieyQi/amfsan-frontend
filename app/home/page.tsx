@@ -337,6 +337,9 @@ export default function HomePage() {
     return item.symbol.toLowerCase().includes(normalizedCandidateFilter);
   });
   const visibleCandidateSymbols = filteredCandidateSymbols.slice(0, 80);
+  const visibleSpotHoldings = (spot?.holdings || []).filter(
+    item => item.quote_asset === "USDT" && item.eligible
+  );
 
   if (isLoading) {
     return (
@@ -380,16 +383,16 @@ export default function HomePage() {
             {spot?.status === "unconfigured" && !!spot.missing_credentials?.length &&
               <p className="text-sm mb-3 text-amber-700">未读取到：{spot.missing_credentials.join("、")}</p>}
             {spot?.status === "ok" && <>
-              {spot.holdings.length === 0 ? <p className="text-sm text-gray-500">暂无可用于监控的现货持仓交易对</p> :
+              {visibleSpotHoldings.length === 0 ? <p className="text-sm text-gray-500">暂无估值达到 {spot.min_holding_usdt || "10"} USDT 的有效现货持仓</p> :
               <div className="overflow-x-auto max-h-64"><table className="w-full text-sm">
                 <thead><tr><th className="text-left">资产</th><th className="text-left">持有</th><th className="text-left">可用</th><th className="text-left">冻结</th><th className="text-left">估值（USDT）</th><th className="text-left">监控资格</th></tr></thead>
-                <tbody>{Array.from(new Map(spot.holdings.map(item => [item.base_asset, item])).values()).map(item => <tr key={item.base_asset} className="border-t">
+                <tbody>{Array.from(new Map(visibleSpotHoldings.map(item => [item.base_asset, item])).values()).map(item => <tr key={item.base_asset} className="border-t">
                   <td className="py-2">{item.base_asset}</td><td>{item.total}</td><td>{item.free}</td><td>{item.locked}</td><td>{item.value_usdt ?? "—"}</td>
                   <td>{item.eligible ? "达到门槛" : item.valuation_status === "unavailable" ? "估值不可用" : "低于监控门槛"}</td>
                 </tr>)}</tbody>
               </table></div>}
             </>}
-            <p className="text-xs text-gray-500 mt-3">监控门槛为 {spot?.min_holding_usdt || "10"} USDT（含冻结数量）。低于门槛时跳过提醒，估值恢复后继续检查；余额归零才自动暂停。仅显示有可用 USDT 现货交易对的持仓。</p>
+            <p className="text-xs text-gray-500 mt-3">仅显示估值达到 {spot?.min_holding_usdt || "10"} USDT 的有效持仓（含冻结数量），且须有可用 USDT 现货交易对。低于门槛或估值不可用时不展示、不提醒；估值恢复后继续检查，余额归零才自动暂停。</p>
           </CardContent>
         </Card>}
 
