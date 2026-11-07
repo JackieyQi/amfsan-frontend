@@ -48,7 +48,27 @@ export interface SymbolData {
   create_ts: number;
 }
 
+export interface MonitorAction {
+  allowed: boolean;
+  reason: string;
+}
+
+export interface MonitorOptions {
+  can_view_spot: boolean;
+  allowed_directions: ("buy" | "sell")[];
+}
+
+export function getMonitorOptions(): Promise<MonitorOptions> {
+  return apiRequest<MonitorOptions>("/api/market/plot/options", { method: "GET" });
+}
+
 export interface MonitorData extends SymbolData {
+  status: string;
+  status_text: string;
+  readiness_status: string;
+  blocked_reason: string;
+  allowed_directions: ("buy" | "sell")[];
+  actions: Record<"edit" | "pause" | "resume" | "delete", MonitorAction>;
   strategy_model_key: string | null;
   strategy_model?: { key: string; name: string; version: string };
   id: number;

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getUserInfo,
+  getMonitorOptions,
+  type MonitorOptions,
   getSpotHoldings,
   type SpotHoldings,
   getSignalCatalog,
@@ -45,6 +47,7 @@ export default function HomePage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [monitorOptions, setMonitorOptions] = useState<MonitorOptions | null>(null);
   const [spot, setSpot] = useState<SpotHoldings | null>(null);
   const [loadingSpot, setLoadingSpot] = useState(false);
   const [symbols, setSymbols] = useState<MonitorData[]>([]);
@@ -104,6 +107,7 @@ export default function HomePage() {
     // 获取用户详细信息、当前监控列表、候选币种和候选通知开关
     // Promise.all([fetchUserDetails(), fetchMarketSymbols(), fetchCandidateSymbols(), fetchCandidateTopPriceNoticeSetting()])
     Promise.all([
+      getMonitorOptions().then(setMonitorOptions).catch(() => toast.error("监控权限加载失败，请刷新后重试")),
       getSignalCatalog().then(catalog => setModels(catalog.models.filter(model => model.monitor_directions?.length)))
         .catch(() => toast.error("策略模型加载失败，请刷新后重试")),
       fetchMarketSymbols(),
@@ -124,14 +128,18 @@ export default function HomePage() {
     } finally {
       setLoadingSpot(false);
     }
+    await fetchMarketSymbols();
   };
 
   useEffect(() => {
-    if (userInfo?.user_id !== "root") return;
-    void fetchSpot();
-    const timer = setInterval(() => { void fetchSpot(); void fetchMarketSymbols(); }, 30000);
+    if (!monitorOptions) return;
+    if (monitorOptions.can_view_spot) void fetchSpot();
+    const timer = setInterval(() => {
+      if (monitorOptions.can_view_spot) void fetchSpot();
+      else void fetchMarketSymbols();
+    }, 30000);
     return () => clearInterval(timer);
-  }, [userInfo?.user_id]);
+  }, [monitorOptions]);
 
   const fetchUserDetails = async () => {
     try {
@@ -218,10 +226,6 @@ export default function HomePage() {
     }
     if (direction === "sell" && (!stopLoss.trim() && !takeProfit.trim())) {
       toast.error("请至少设置一个止盈价或止损价");
-      return;
-    }
-    if (direction === "sell" && (spot?.status !== "ok" || !spot.holdings.some(item => item.symbol === newSymbol.toLowerCase() && item.eligible))) {
-      toast.error(`请刷新持仓并选择估值至少 ${spot?.min_holding_usdt || "10"} USDT 的现货交易对`);
       return;
     }
     if (direction === "buy" && !selectedModel?.monitor_directions?.includes(direction)) {
@@ -337,9 +341,8 @@ export default function HomePage() {
     return item.symbol.toLowerCase().includes(normalizedCandidateFilter);
   });
   const visibleCandidateSymbols = filteredCandidateSymbols.slice(0, 80);
-  const visibleSpotHoldings = (spot?.holdings || []).filter(
-    item => item.quote_asset === "USDT" && item.eligible
-  );
+  const visibleSpotHoldings = spot?.holdings || [];
+  const allowedDirections = editing?.allowed_directions || monitorOptions?.allowed_directions || [];
 
   if (isLoading) {
     return (
@@ -373,9 +376,9 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {userInfo?.user_id === "root" && <Card className="mb-6">
+        {monitorOptions?.can_view_spot && <Card className="mb-6">
           <CardHeader><div className="flex justify-between items-center"><CardTitle>币安现货持仓（USDT 交易对）</CardTitle>
-            <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void fetchSpot(); void fetchMarketSymbols(); }}>{loadingSpot ? "同步中…" : "刷新持仓"}</Button>
+            <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void fetchSpot(); }}>{loadingSpot ? "同步中…" : "刷新持仓"}</Button>
           </div></CardHeader>
           <CardContent>
             <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已同步，每 30 秒刷新", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "当前后端进程未读取到完整的币安密钥，修改环境文件后需重建容器", pending: "密钥已读取，等待首次持仓同步", config_mismatch: "持仓缓存与当前密钥不一致，请检查各后端服务配置并统一重建" })[spot.status]}
@@ -406,7 +409,7 @@ export default function HomePage() {
             </p>
             {editing && <p className="mb-3 text-sm">所属用户：{editing.user_id} · {editing.is_valid ? "监控中" : "已暂停，保存不会自动恢复"}</p>}
             <form onSubmit={handleAddSymbol} className="space-y-4">
-              <fieldset disabled={isAddingSymbol} className="space-y-4">
+              <fieldset disabled={isAddingSymbol || !monitorOptions || (!!editing && !editing.actions.edit.allowed)} className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span>币种</span>
@@ -446,8 +449,8 @@ export default function HomePage() {
                       }}
                       className="h-9 w-full rounded-md border bg-white px-3">
                       <option value="" disabled>请选择方向</option>
-                      <option value="buy">监控买入机会</option>
-                      <option value="sell" disabled={userInfo?.user_id !== "root" || (!!editing && editing.user_id !== "root")}>现货持仓止盈止损（root）</option>
+                      <option value="buy" disabled={!allowedDirections.includes("buy")}>监控买入机会</option>
+                      <option value="sell" disabled={!allowedDirections.includes("sell")}>现货持仓止盈止损</option>
                     </select>
                   </label>
                 </div>
@@ -500,7 +503,8 @@ export default function HomePage() {
                     <tr key={item.id} className="border-t">
                       <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
-                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.strategy_model_key !== "binance_spot_price" && (item.monitor_direction === "sell" || !item.strategy_model) ? "待重新配置" : !item.is_valid ? "已暂停" : item.strategy_model_key === "binance_spot_price" && spot?.status !== "ok" ? "等待持仓同步" : item.strategy_model_key === "binance_spot_price" && !spot?.holdings.find(holding => holding.symbol === item.symbol)?.eligible ? (spot?.holdings.find(holding => holding.symbol === item.symbol)?.valuation_status === "below_minimum" ? "低于监控门槛" : "持仓或估值不可用") : "监控中"}</div>
+                        <div className={item.status === "monitoring" ? "text-green-700" : "text-gray-500"}>{item.status_text}</div>
+                        {item.blocked_reason && <div className="text-xs text-amber-700">{item.blocked_reason}</div>}
                       </td>
                       <td className="px-3 py-3">{item.strategy_model_key === "binance_spot_price" ? "币安现货持仓止盈止损" : item.strategy_model ? <>
                         <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>
@@ -511,9 +515,9 @@ export default function HomePage() {
                         <div className="text-xs text-gray-500">{{ model_daily_ema_hourly_macd: "日线 EMA / 小时 MACD", model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
                       </td>
                       <td className="px-3 py-3"><div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" disabled={busyId !== null || isAddingSymbol} onClick={() => editMonitor(item)}>编辑</Button>
-                        <Button size="sm" variant="outline" disabled={busyId !== null || isAddingSymbol} onClick={() => toggleMonitor(item)}>{item.is_valid ? "暂停" : "恢复"}</Button>
-                        <Button size="sm" variant="destructive" disabled={busyId !== null || isAddingSymbol} onClick={() => handleDeleteSymbol(item)}>移除</Button>
+                        <Button size="sm" variant="outline" title={item.actions.edit.reason} disabled={busyId !== null || isAddingSymbol || !item.actions.edit.allowed} onClick={() => editMonitor(item)}>编辑</Button>
+                        <Button size="sm" variant="outline" title={item.actions[item.is_valid ? "pause" : "resume"].reason} disabled={busyId !== null || isAddingSymbol || !item.actions[item.is_valid ? "pause" : "resume"].allowed} onClick={() => toggleMonitor(item)}>{item.is_valid ? "暂停" : "恢复"}</Button>
+                        <Button size="sm" variant="destructive" title={item.actions.delete.reason} disabled={busyId !== null || isAddingSymbol || !item.actions.delete.allowed} onClick={() => handleDeleteSymbol(item)}>移除</Button>
                       </div></td>
                     </tr>
                   ))}</tbody>
