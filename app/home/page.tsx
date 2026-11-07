@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getUserInfo,
+  getSpotHoldings,
+  type SpotHoldings,
   getSignalCatalog,
   type SignalCatalog,
   logoutUser,
@@ -43,6 +45,8 @@ export default function HomePage() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [spot, setSpot] = useState<SpotHoldings | null>(null);
+  const [loadingSpot, setLoadingSpot] = useState(false);
   const [symbols, setSymbols] = useState<MonitorData[]>([]);
   const [candidateSymbols, setCandidateSymbols] = useState<SymbolData[]>([]);
   const [candidateFilter, setCandidateFilter] = useState("");
@@ -110,6 +114,24 @@ export default function HomePage() {
       .catch((err) => console.error("获取数据失败", err))
       .finally(() => setIsLoading(false));
   }, [router]);
+
+  const fetchSpot = async () => {
+    setLoadingSpot(true);
+    try {
+      setSpot(await getSpotHoldings());
+    } catch {
+      setSpot(previous => ({ status: "error", updated_ts: previous?.updated_ts || 0, holdings: [] }));
+    } finally {
+      setLoadingSpot(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userInfo?.user_id !== "root") return;
+    void fetchSpot();
+    const timer = setInterval(() => { void fetchSpot(); void fetchMarketSymbols(); }, 30000);
+    return () => clearInterval(timer);
+  }, [userInfo?.user_id]);
 
   const fetchUserDetails = async () => {
     try {
@@ -194,14 +216,22 @@ export default function HomePage() {
       toast.error("请填写币种并选择监控方向");
       return;
     }
-    if (!selectedModel?.monitor_directions?.includes(direction)) {
+    if (direction === "sell" && (!stopLoss.trim() && !takeProfit.trim())) {
+      toast.error("请至少设置一个止盈价或止损价");
+      return;
+    }
+    if (direction === "sell" && (spot?.status !== "ok" || !spot.holdings.some(item => item.symbol === newSymbol.toLowerCase()))) {
+      toast.error("请刷新持仓并选择实际持有的现货交易对");
+      return;
+    }
+    if (direction === "buy" && !selectedModel?.monitor_directions?.includes(direction)) {
       toast.error("请选择支持当前监控方向的已开放模型");
       return;
     }
     setIsAddingSymbol(true);
     const config = {
       monitor_direction: direction,
-      strategy_model_key: modelKey,
+      strategy_model_key: direction === "sell" ? "binance_spot_price" : modelKey,
       stop_loss_price: direction === "sell" ? stopLoss.trim() || null : null,
       take_profit_price: direction === "sell" ? takeProfit.trim() || null : null,
     };
@@ -225,7 +255,7 @@ export default function HomePage() {
     setEditing(item);
     setNewSymbol(item.symbol);
     setDirection(item.monitor_direction);
-    setModelKey(item.strategy_model_key || "");
+    setModelKey(item.monitor_direction === "sell" ? MONITOR_MODEL : item.strategy_model_key || "");
     setStopLoss(item.stop_loss_price || "");
     setTakeProfit(item.take_profit_price || "");
     document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
@@ -340,6 +370,26 @@ export default function HomePage() {
           </Button>
         </div>
 
+        {userInfo?.user_id === "root" && <Card className="mb-6">
+          <CardHeader><div className="flex justify-between items-center"><CardTitle>币安现货持仓</CardTitle>
+            <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void fetchSpot(); void fetchMarketSymbols(); }}>{loadingSpot ? "同步中…" : "刷新持仓"}</Button>
+          </div></CardHeader>
+          <CardContent>
+            <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已同步，每 30 秒刷新", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "尚未配置服务端币安只读密钥" })[spot.status]}
+              {spot?.updated_ts ? ` · 最近成功同步：${formatTimestamp(spot.updated_ts)}` : ""}</p>
+            {spot?.status === "ok" && <>
+              {spot.holdings.length === 0 ? <p className="text-sm text-gray-500">暂无可用于监控的现货持仓交易对</p> :
+              <div className="overflow-x-auto max-h-64"><table className="w-full text-sm">
+                <thead><tr><th className="text-left">资产</th><th className="text-left">持有</th><th className="text-left">可用</th><th className="text-left">冻结</th></tr></thead>
+                <tbody>{Array.from(new Map(spot.holdings.map(item => [item.base_asset, item])).values()).map(item => <tr key={item.base_asset} className="border-t">
+                  <td className="py-2">{item.base_asset}</td><td>{item.total}</td><td>{item.free}</td><td>{item.locked}</td>
+                </tr>)}</tbody>
+              </table></div>}
+            </>}
+            <p className="text-xs text-gray-500 mt-3">仅显示有可用现货交易对的持仓；从下方选择交易对添加卖出监控。只发提醒，不自动下单。</p>
+          </CardContent>
+        </Card>}
+
         <Card className="mb-6" id="monitor-form">
           <CardHeader>
             <CardTitle>{editing ? `编辑监控：${editing.symbol}` : "添加方向监控"}</CardTitle>
@@ -354,10 +404,16 @@ export default function HomePage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-2 text-sm">
                     <span>币种</span>
-                    <Input required placeholder="例如 ethusdt" value={newSymbol} disabled={!!editing}
-                      onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />
+                    {direction === "sell" ? <select required value={newSymbol} disabled={!!editing || spot?.status !== "ok"}
+                      className="h-9 w-full rounded-md border bg-white px-3" onChange={e => setNewSymbol(e.target.value)}>
+                      <option value="">请选择持仓交易对</option>
+                      {editing && !spot?.holdings.some(item => item.symbol === newSymbol) && <option value={newSymbol}>{newSymbol}（无持仓或数据不可用）</option>}
+                      {spot?.holdings.map(item => <option key={item.symbol} value={item.symbol}>{item.symbol.toUpperCase()} · 持有 {item.total} {item.base_asset}</option>)}
+                    </select> : <Input required placeholder="例如 ethusdt" value={newSymbol} disabled={!!editing}
+                      onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />}
+
                   </label>
-                  <label className="space-y-2 text-sm">
+                  {direction === "buy" && <label className="space-y-2 text-sm">
                     <span>策略模型</span>
                     <select required value={modelKey} className="h-9 w-full rounded-md border bg-white px-3"
                       onChange={(e) => {
@@ -370,15 +426,13 @@ export default function HomePage() {
                       {!selectedModel && <option value={modelKey} disabled>原模型未开放，请重新选择</option>}
                       {models.map(model => <option key={model.key} value={model.key}>{model.name}</option>)}
                     </select>
-                  </label>
+                  </label>}
                   <label className="space-y-2 text-sm">
                     <span>监控方向</span>
                     <select required value={direction}
                       onChange={(e) => {
-                        if (selectedModel && !selectedModel.monitor_directions?.includes(e.target.value as "buy" | "sell")) {
-                          toast.error("所选模型不支持该监控方向，不能切换");
-                          return;
-                        }
+                        if (e.target.value === "buy") setModelKey(MONITOR_MODEL);
+                        if (e.target.value === "sell" && !editing && !spot?.holdings.some(item => item.symbol === newSymbol)) setNewSymbol("");
                         if (e.target.value === "buy" && (stopLoss || takeProfit)) {
                           toast.info("保存后将清除止盈止损价");
                         }
@@ -387,7 +441,7 @@ export default function HomePage() {
                       className="h-9 w-full rounded-md border bg-white px-3">
                       <option value="" disabled>请选择方向</option>
                       <option value="buy">监控买入机会</option>
-                      <option value="sell">监控卖出机会</option>
+                      <option value="sell" disabled={userInfo?.user_id !== "root" || (!!editing && editing.user_id !== "root")}>现货持仓止盈止损（root）</option>
                     </select>
                   </label>
                 </div>
@@ -405,7 +459,7 @@ export default function HomePage() {
                           onChange={(e) => setTakeProfit(e.target.value)} />
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500">不填价格时仅检查卖出技术信号；填写后，触价也会独立提醒。</p>
+                    <p className="text-xs text-gray-500">至少设置一项，价格单位为所选交易对的报价币种。确认清仓后自动暂停，重新持仓需手动恢复。</p>
                   </div>
                 )}
                 <div className="flex gap-2">
@@ -440,9 +494,9 @@ export default function HomePage() {
                     <tr key={item.id} className="border-t">
                       <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
-                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{!item.strategy_model ? "待重新配置" : item.is_valid ? "监控中" : "已暂停"}</div>
+                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.strategy_model_key !== "binance_spot_price" && (item.monitor_direction === "sell" || !item.strategy_model) ? "待重新配置" : !item.is_valid ? "已暂停" : item.strategy_model_key === "binance_spot_price" && spot?.status !== "ok" ? "等待持仓同步" : "监控中"}</div>
                       </td>
-                      <td className="px-3 py-3">{item.strategy_model ? <>
+                      <td className="px-3 py-3">{item.strategy_model_key === "binance_spot_price" ? "币安现货持仓止盈止损" : item.strategy_model ? <>
                         <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>
                         <div className="text-xs text-gray-500">{item.monitor_direction === "buy" ? "买入规则" : "卖出规则"} · 版本 {item.strategy_model.version}</div>
                       </> : <span className="text-gray-500">模型未启用，请删除或重新配置</span>}</td>

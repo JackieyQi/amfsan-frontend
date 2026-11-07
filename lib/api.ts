@@ -61,10 +61,29 @@ export interface MonitorData extends SymbolData {
 }
 
 export interface MonitorConfig {
-  strategy_model_key: string;
+  strategy_model_key: string | null;
   monitor_direction: "buy" | "sell";
   take_profit_price?: string | null;
   stop_loss_price?: string | null;
+}
+
+export interface SpotHolding {
+  symbol: string;
+  base_asset: string;
+  quote_asset: string;
+  free: string;
+  locked: string;
+  total: string;
+}
+
+export interface SpotHoldings {
+  status: "ok" | "stale" | "error" | "unconfigured";
+  updated_ts: number;
+  holdings: SpotHolding[];
+}
+
+export function getSpotHoldings(): Promise<SpotHoldings> {
+  return apiRequest<SpotHoldings>("/api/market/binance/spot-holdings", { method: "GET" });
 }
 
 export interface CandidateTopPriceNoticeSetting {
