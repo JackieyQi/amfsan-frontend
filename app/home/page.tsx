@@ -120,7 +120,7 @@ export default function HomePage() {
     try {
       setSpot(await getSpotHoldings());
     } catch {
-      setSpot(previous => ({ status: "error", updated_ts: previous?.updated_ts || 0, holdings: [] }));
+      setSpot(previous => ({ status: "error", updated_ts: previous?.updated_ts || 0, min_holding_usdt: previous?.min_holding_usdt || "10", holdings: [] }));
     } finally {
       setLoadingSpot(false);
     }
@@ -220,8 +220,8 @@ export default function HomePage() {
       toast.error("请至少设置一个止盈价或止损价");
       return;
     }
-    if (direction === "sell" && (spot?.status !== "ok" || !spot.holdings.some(item => item.symbol === newSymbol.toLowerCase()))) {
-      toast.error("请刷新持仓并选择实际持有的现货交易对");
+    if (direction === "sell" && (spot?.status !== "ok" || !spot.holdings.some(item => item.symbol === newSymbol.toLowerCase() && item.eligible))) {
+      toast.error(`请刷新持仓并选择估值至少 ${spot?.min_holding_usdt || "10"} USDT 的现货交易对`);
       return;
     }
     if (direction === "buy" && !selectedModel?.monitor_directions?.includes(direction)) {
@@ -371,22 +371,25 @@ export default function HomePage() {
         </div>
 
         {userInfo?.user_id === "root" && <Card className="mb-6">
-          <CardHeader><div className="flex justify-between items-center"><CardTitle>币安现货持仓</CardTitle>
+          <CardHeader><div className="flex justify-between items-center"><CardTitle>币安现货持仓（USDT 交易对）</CardTitle>
             <Button variant="outline" size="sm" disabled={loadingSpot} onClick={() => { void fetchSpot(); void fetchMarketSymbols(); }}>{loadingSpot ? "同步中…" : "刷新持仓"}</Button>
           </div></CardHeader>
           <CardContent>
-            <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已同步，每 30 秒刷新", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "尚未配置服务端币安只读密钥" })[spot.status]}
+            <p className="text-sm mb-3">{!spot ? "正在读取持仓…" : ({ ok: "已同步，每 30 秒刷新", stale: "持仓已过期，卖出判断暂停", error: "同步失败，卖出判断暂停，请检查服务端密钥、权限与网络", unconfigured: "当前后端进程未读取到完整的币安密钥，修改环境文件后需重建容器", pending: "密钥已读取，等待首次持仓同步", config_mismatch: "持仓缓存与当前密钥不一致，请检查各后端服务配置并统一重建" })[spot.status]}
               {spot?.updated_ts ? ` · 最近成功同步：${formatTimestamp(spot.updated_ts)}` : ""}</p>
+            {spot?.status === "unconfigured" && !!spot.missing_credentials?.length &&
+              <p className="text-sm mb-3 text-amber-700">未读取到：{spot.missing_credentials.join("、")}</p>}
             {spot?.status === "ok" && <>
               {spot.holdings.length === 0 ? <p className="text-sm text-gray-500">暂无可用于监控的现货持仓交易对</p> :
               <div className="overflow-x-auto max-h-64"><table className="w-full text-sm">
-                <thead><tr><th className="text-left">资产</th><th className="text-left">持有</th><th className="text-left">可用</th><th className="text-left">冻结</th></tr></thead>
+                <thead><tr><th className="text-left">资产</th><th className="text-left">持有</th><th className="text-left">可用</th><th className="text-left">冻结</th><th className="text-left">估值（USDT）</th><th className="text-left">监控资格</th></tr></thead>
                 <tbody>{Array.from(new Map(spot.holdings.map(item => [item.base_asset, item])).values()).map(item => <tr key={item.base_asset} className="border-t">
-                  <td className="py-2">{item.base_asset}</td><td>{item.total}</td><td>{item.free}</td><td>{item.locked}</td>
+                  <td className="py-2">{item.base_asset}</td><td>{item.total}</td><td>{item.free}</td><td>{item.locked}</td><td>{item.value_usdt ?? "—"}</td>
+                  <td>{item.eligible ? "达到门槛" : item.valuation_status === "unavailable" ? "估值不可用" : "低于监控门槛"}</td>
                 </tr>)}</tbody>
               </table></div>}
             </>}
-            <p className="text-xs text-gray-500 mt-3">仅显示有可用现货交易对的持仓；从下方选择交易对添加卖出监控。只发提醒，不自动下单。</p>
+            <p className="text-xs text-gray-500 mt-3">监控门槛为 {spot?.min_holding_usdt || "10"} USDT（含冻结数量）。低于门槛时跳过提醒，估值恢复后继续检查；余额归零才自动暂停。仅显示有可用 USDT 现货交易对的持仓。</p>
           </CardContent>
         </Card>}
 
@@ -406,9 +409,9 @@ export default function HomePage() {
                     <span>币种</span>
                     {direction === "sell" ? <select required value={newSymbol} disabled={!!editing || spot?.status !== "ok"}
                       className="h-9 w-full rounded-md border bg-white px-3" onChange={e => setNewSymbol(e.target.value)}>
-                      <option value="">请选择持仓交易对</option>
+                      <option value="">请选择 USDT 持仓交易对</option>
                       {editing && !spot?.holdings.some(item => item.symbol === newSymbol) && <option value={newSymbol}>{newSymbol}（无持仓或数据不可用）</option>}
-                      {spot?.holdings.map(item => <option key={item.symbol} value={item.symbol}>{item.symbol.toUpperCase()} · 持有 {item.total} {item.base_asset}</option>)}
+                      {spot?.holdings.map(item => <option key={item.symbol} value={item.symbol} disabled={!item.eligible}>{item.symbol.toUpperCase()} · 持有 {item.total} {item.base_asset}{!item.eligible ? item.valuation_status === "unavailable" ? "（估值不可用）" : "（低于监控门槛）" : ""}</option>)}
                     </select> : <Input required placeholder="例如 ethusdt" value={newSymbol} disabled={!!editing}
                       onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />}
 
@@ -459,7 +462,7 @@ export default function HomePage() {
                           onChange={(e) => setTakeProfit(e.target.value)} />
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500">至少设置一项，价格单位为所选交易对的报价币种。确认清仓后自动暂停，重新持仓需手动恢复。</p>
+                    <p className="text-xs text-gray-500">至少设置一项，价格单位为 USDT。确认清仓后自动暂停，重新持仓需手动恢复。</p>
                   </div>
                 )}
                 <div className="flex gap-2">
@@ -494,7 +497,7 @@ export default function HomePage() {
                     <tr key={item.id} className="border-t">
                       <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
-                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.strategy_model_key !== "binance_spot_price" && (item.monitor_direction === "sell" || !item.strategy_model) ? "待重新配置" : !item.is_valid ? "已暂停" : item.strategy_model_key === "binance_spot_price" && spot?.status !== "ok" ? "等待持仓同步" : "监控中"}</div>
+                        <div className={item.is_valid ? "text-green-700" : "text-gray-500"}>{item.strategy_model_key !== "binance_spot_price" && (item.monitor_direction === "sell" || !item.strategy_model) ? "待重新配置" : !item.is_valid ? "已暂停" : item.strategy_model_key === "binance_spot_price" && spot?.status !== "ok" ? "等待持仓同步" : item.strategy_model_key === "binance_spot_price" && !spot?.holdings.find(holding => holding.symbol === item.symbol)?.eligible ? (spot?.holdings.find(holding => holding.symbol === item.symbol)?.valuation_status === "below_minimum" ? "低于监控门槛" : "持仓或估值不可用") : "监控中"}</div>
                       </td>
                       <td className="px-3 py-3">{item.strategy_model_key === "binance_spot_price" ? "币安现货持仓止盈止损" : item.strategy_model ? <>
                         <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>

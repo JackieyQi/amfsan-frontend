@@ -74,10 +74,15 @@ export interface SpotHolding {
   free: string;
   locked: string;
   total: string;
+  value_usdt: string | null;
+  eligible: boolean;
+  valuation_status: "eligible" | "below_minimum" | "unavailable";
 }
 
 export interface SpotHoldings {
-  status: "ok" | "stale" | "error" | "unconfigured";
+  status: "ok" | "stale" | "error" | "unconfigured" | "pending" | "config_mismatch";
+  missing_credentials?: string[];
+  min_holding_usdt: string;
   updated_ts: number;
   holdings: SpotHolding[];
 }
