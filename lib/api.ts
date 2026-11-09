@@ -63,6 +63,7 @@ export function getMonitorOptions(): Promise<MonitorOptions> {
 }
 
 export interface MonitorData extends SymbolData {
+  holding?: SpotHolding | null;
   status: string;
   status_text: string;
   readiness_status: string;

@@ -15,8 +15,6 @@ import {
   type MonitorOptions,
   getSpotHoldings,
   type SpotHoldings,
-  getSignalCatalog,
-  type SignalCatalog,
   logoutUser,
   isLoggedIn,
   getMarketSymbols,
@@ -24,7 +22,6 @@ import {
   getCandidateTopPriceNoticeSetting,
   updateCandidateTopPriceNoticeSetting,
   updateMarketSymbol,
-  addMarketSymbol,
   deleteMarketSymbol,
   type UserDetails,
   type SymbolData,
@@ -33,7 +30,7 @@ import {
 import { safeJsonParse, safeText } from "@/lib/security";
 
 
-const MONITOR_MODEL = "model_daily_ema_hourly_macd";
+const MONITOR_MODEL = "binance_spot_pending";
 
 // 定义用户类型
 interface UserInfo {
@@ -65,10 +62,8 @@ export default function HomePage() {
     setIsUpdatingCandidateTopPriceNotice,
   ] = useState(false);
   const [newSymbol, setNewSymbol] = useState("");
-  const [direction, setDirection] = useState<"" | "buy" | "sell">("buy");
-  const [models, setModels] = useState<SignalCatalog["models"]>([]);
+  const [direction, setDirection] = useState<"" | "buy" | "sell">("sell");
   const [modelKey, setModelKey] = useState(MONITOR_MODEL);
-  const selectedModel = models.find(model => model.key === modelKey);
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [editing, setEditing] = useState<MonitorData | null>(null);
@@ -109,11 +104,9 @@ export default function HomePage() {
     Promise.all([
       getMonitorOptions().then(async options => {
         setMonitorOptions(options);
+        await fetchMarketSymbols();
         if (options.can_view_spot) await fetchSpot();
       }).catch(() => toast.error("监控权限加载失败，请刷新后重试")),
-      getSignalCatalog().then(catalog => setModels(catalog.models.filter(model => model.monitor_directions?.length)))
-        .catch(() => toast.error("策略模型加载失败，请刷新后重试")),
-      fetchMarketSymbols(),
       fetchCandidateSymbols(),
       fetchCandidateTopPriceNoticeSetting(),
     ])
@@ -134,10 +127,8 @@ export default function HomePage() {
   };
 
   const refreshMonitorData = async () => {
-    await Promise.all([
-      fetchMarketSymbols(),
-      ...(monitorOptions?.can_view_spot ? [fetchSpot()] : []),
-    ]);
+    await fetchMarketSymbols();
+    if (monitorOptions?.can_view_spot) await fetchSpot();
   };
 
   const fetchUserDetails = async () => {
@@ -211,7 +202,7 @@ export default function HomePage() {
   const resetForm = () => {
     setEditing(null);
     setNewSymbol("");
-    setDirection("buy");
+    setDirection("sell");
     setModelKey(MONITOR_MODEL);
     setStopLoss("");
     setTakeProfit("");
@@ -219,31 +210,24 @@ export default function HomePage() {
 
   const handleAddSymbol = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!editing) return;
     if (!newSymbol.trim() || !direction) {
       toast.error("请填写币种并选择监控方向");
       return;
     }
-    if (direction === "sell" && (!stopLoss.trim() && !takeProfit.trim())) {
+    if (direction === "sell" && modelKey === "binance_spot_price" && (!stopLoss.trim() && !takeProfit.trim())) {
       toast.error("请至少设置一个止盈价或止损价");
-      return;
-    }
-    if (direction === "buy" && !selectedModel?.monitor_directions?.includes(direction)) {
-      toast.error("请选择支持当前监控方向的已开放模型");
       return;
     }
     setIsAddingSymbol(true);
     const config = {
       monitor_direction: direction,
-      strategy_model_key: direction === "sell" ? "binance_spot_price" : modelKey,
+      strategy_model_key: modelKey,
       stop_loss_price: direction === "sell" ? stopLoss.trim() || null : null,
       take_profit_price: direction === "sell" ? takeProfit.trim() || null : null,
     };
     try {
-      if (editing) {
-        await updateMarketSymbol(editing.id, config);
-      } else {
-        await addMarketSymbol(newSymbol, config);
-      }
+      await updateMarketSymbol(editing.id, config);
       toast.success(editing ? "监控配置已更新" : "已添加监控");
       resetForm();
       await refreshMonitorData();
@@ -258,17 +242,10 @@ export default function HomePage() {
     setEditing(item);
     setNewSymbol(item.symbol);
     setDirection(item.monitor_direction);
-    setModelKey(item.monitor_direction === "sell" ? MONITOR_MODEL : item.strategy_model_key || "");
+    setModelKey(item.strategy_model_key === "binance_spot_price" ? "binance_spot_price" : MONITOR_MODEL);
     setStopLoss(item.stop_loss_price || "");
     setTakeProfit(item.take_profit_price || "");
-    document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const handleAddCandidateSymbol = (symbol: string) => {
-    resetForm();
-    setNewSymbol(symbol);
-    document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" });
-    toast.info("已选择买入模型，请确认后添加监控");
+    requestAnimationFrame(() => document.getElementById("monitor-form")?.scrollIntoView({ behavior: "smooth" }));
   };
 
   const toggleMonitor = async (item: MonitorData) => {
@@ -342,7 +319,6 @@ export default function HomePage() {
   });
   const visibleCandidateSymbols = filteredCandidateSymbols.slice(0, 80);
   const visibleSpotHoldings = spot?.holdings || [];
-  const allowedDirections = editing?.allowed_directions || monitorOptions?.allowed_directions || [];
 
   if (isLoading) {
     return (
@@ -395,90 +371,34 @@ export default function HomePage() {
                 </tr>)}</tbody>
               </table></div>}
             </>}
-            <p className="text-xs text-gray-500 mt-3">仅显示估值达到 {spot?.min_holding_usdt || "10"} USDT 的有效持仓（含冻结数量），且须有可用 USDT 现货交易对。低于门槛或估值不可用时不展示、不提醒；估值恢复后继续检查，余额归零才自动暂停。</p>
+            <p className="text-xs text-gray-500 mt-3">仅显示估值达到 {spot?.min_holding_usdt || "10"} USDT 的有效持仓（含冻结数量），且须有可用 USDT 现货交易对。低于门槛或估值不可用时不展示、不提醒；估值恢复后继续检查，余额归零后停止判断，再次持仓后复用配置；手动暂停不会自动恢复。</p>
           </CardContent>
         </Card>}
 
-        <Card className="mb-6" id="monitor-form">
-          <CardHeader>
-            <CardTitle>{editing ? `编辑监控：${editing.symbol}` : "添加方向监控"}</CardTitle>
-          </CardHeader>
+        {editing && <Card className="mb-6" id="monitor-form">
+          <CardHeader><CardTitle>编辑卖出监控：{editing.symbol}</CardTitle></CardHeader>
           <CardContent>
-            <p className="mb-4 text-sm text-gray-600">
-              选择想关注的方向，满足条件后邮件提醒。通知后继续监控，方向由你手动切换。
-            </p>
-            {editing && <p className="mb-3 text-sm">所属用户：{editing.user_id} · {editing.is_valid ? "监控中" : "已暂停，保存不会自动恢复"}</p>}
+            <p className="mb-4 text-sm text-gray-600">持仓自动加入监控列表。默认使用最新已收盘的 1 小时 MACD 死叉，也可选择手动止盈止损。保存配置不会改变暂停状态。</p>
             <form onSubmit={handleAddSymbol} className="space-y-4">
-              <fieldset disabled={isAddingSymbol || !monitorOptions || (!!editing && !editing.actions.edit.allowed)} className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-2 text-sm">
-                    <span>币种</span>
-                    {direction === "sell" ? <select required value={newSymbol} disabled={!!editing || spot?.status !== "ok"}
-                      className="h-9 w-full rounded-md border bg-white px-3" onChange={e => setNewSymbol(e.target.value)}>
-                      <option value="">请选择 USDT 持仓交易对</option>
-                      {editing && !spot?.holdings.some(item => item.symbol === newSymbol) && <option value={newSymbol}>{newSymbol}（无持仓或数据不可用）</option>}
-                      {spot?.holdings.map(item => <option key={item.symbol} value={item.symbol} disabled={!item.eligible}>{item.symbol.toUpperCase()} · 持有 {item.total} {item.base_asset}{!item.eligible ? item.valuation_status === "unavailable" ? "（估值不可用）" : "（低于监控门槛）" : ""}</option>)}
-                    </select> : <Input required placeholder="例如 ethusdt" value={newSymbol} disabled={!!editing}
-                      onChange={(e) => setNewSymbol(e.target.value)} maxLength={10} />}
-
-                  </label>
-                  {direction === "buy" && <label className="space-y-2 text-sm">
-                    <span>策略模型</span>
-                    <select required value={modelKey} className="h-9 w-full rounded-md border bg-white px-3"
-                      onChange={(e) => {
-                        if (direction && !models.find(model => model.key === e.target.value)?.monitor_directions?.includes(direction)) {
-                          toast.error("所选模型不支持当前监控方向，不能切换。请先修改监控方向");
-                          return;
-                        }
-                        setModelKey(e.target.value);
-                      }}>
-                      {!selectedModel && <option value={modelKey} disabled>原模型未开放，请重新选择</option>}
-                      {models.map(model => <option key={model.key} value={model.key}>{model.name}</option>)}
-                    </select>
-                  </label>}
-                  <label className="space-y-2 text-sm">
-                    <span>监控方向</span>
-                    <select required value={direction}
-                      onChange={(e) => {
-                        if (e.target.value === "buy") setModelKey(MONITOR_MODEL);
-                        if (e.target.value === "sell" && !editing && !spot?.holdings.some(item => item.symbol === newSymbol)) setNewSymbol("");
-                        if (e.target.value === "buy" && (stopLoss || takeProfit)) {
-                          toast.info("保存后将清除止盈止损价");
-                        }
-                        setDirection(e.target.value as "buy" | "sell");
-                      }}
-                      className="h-9 w-full rounded-md border bg-white px-3">
-                      <option value="" disabled>请选择方向</option>
-                      <option value="buy" disabled={!allowedDirections.includes("buy")}>监控买入机会</option>
-                      <option value="sell" disabled={!allowedDirections.includes("sell")}>现货持仓止盈止损</option>
-                    </select>
-                  </label>
-                </div>
-                {direction === "sell" && (
-                  <div className="space-y-2">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="space-y-2 text-sm">
-                        <span>止损价（可选）</span>
-                        <Input inputMode="decimal" placeholder="价格跌至此处时提醒" value={stopLoss}
-                          onChange={(e) => setStopLoss(e.target.value)} />
-                      </label>
-                      <label className="space-y-2 text-sm">
-                        <span>止盈价（可选）</span>
-                        <Input inputMode="decimal" placeholder="价格涨至此处时提醒" value={takeProfit}
-                          onChange={(e) => setTakeProfit(e.target.value)} />
-                      </label>
-                    </div>
-                    <p className="text-xs text-gray-500">至少设置一项，价格单位为 USDT。确认清仓后自动暂停，重新持仓需手动恢复。</p>
-                  </div>
-                )}
-                <div className="flex gap-2">
-                  <Button type="submit">{isAddingSymbol ? "保存中..." : editing ? "保存修改" : "添加监控"}</Button>
-                  {editing && <Button type="button" variant="outline" onClick={resetForm}>取消编辑</Button>}
-                </div>
+              <fieldset disabled={isAddingSymbol || !editing.actions.edit.allowed} className="space-y-4">
+                <label className="block space-y-2 text-sm"><span>卖出策略模型</span>
+                  <select value={modelKey} className="h-9 w-full rounded-md border bg-white px-3"
+                    onChange={e => { setModelKey(e.target.value); if (e.target.value === MONITOR_MODEL) { setStopLoss(""); setTakeProfit(""); } }}>
+                    <option value="binance_spot_pending">1小时已收盘 MACD 死叉（默认）</option>
+                    <option value="binance_spot_price">手动止盈止损</option>
+                  </select>
+                </label>
+                {modelKey === "binance_spot_price" && <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="space-y-2 text-sm"><span>止损价（USDT）</span><Input inputMode="decimal" value={stopLoss} onChange={e => setStopLoss(e.target.value)} /></label>
+                  <label className="space-y-2 text-sm"><span>止盈价（USDT）</span><Input inputMode="decimal" value={takeProfit} onChange={e => setTakeProfit(e.target.value)} /></label>
+                  <p className="text-xs text-gray-500">至少设置一个价格，触及时发送邮件提醒。</p>
+                </div>}
+                <div className="flex gap-2"><Button type="submit">{isAddingSymbol ? "保存中…" : "保存修改"}</Button>
+                  <Button type="button" variant="outline" onClick={resetForm}>取消编辑</Button></div>
               </fieldset>
             </form>
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card className="mb-6">
           <CardHeader>
@@ -488,8 +408,8 @@ export default function HomePage() {
             </div>
           </CardHeader>
           <CardContent>
-            <p className="mb-3 text-xs text-gray-500">以下为上次读取的状态。后台持续监控；页面在打开、手动刷新或操作成功后更新。</p>
-            {symbols.length === 0 ? <div className="py-4 text-center text-gray-500">暂无监控，请添加币种并选择方向</div> : (
+            <p className="mb-3 text-xs text-gray-500">实际持仓自动纳入卖出监控，买入监控暂时停用。默认在最新已收盘的 1 小时 MACD 发生死叉时提醒。页面在打开、刷新或操作成功后更新。</p>
+            {symbols.length === 0 ? <div className="py-4 text-center text-gray-500">暂无监控，符合门槛的币安现货持仓将自动加入</div> : (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-sm">
                   <thead><tr className="bg-gray-100">
@@ -502,18 +422,18 @@ export default function HomePage() {
                   </tr></thead>
                   <tbody>{symbols.map((item) => (
                     <tr key={item.id} className="border-t">
-                      <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div></td>
+                      <td className="px-3 py-3">{item.symbol}<div className="text-xs text-gray-500">{item.user_id}</div>{item.holding && <div className="text-xs text-gray-500">持有 {item.holding.total} {item.holding.base_asset} · {item.holding.value_usdt ?? "—"} USDT</div>}</td>
                       <td className="px-3 py-3">{item.monitor_direction === "buy" ? "买入机会" : "卖出机会"}
                         <div className={item.status === "monitoring" ? "text-green-700" : "text-gray-500"}>{item.status_text}</div>
                         {item.blocked_reason && <div className="text-xs text-amber-700">{item.blocked_reason}</div>}
                       </td>
-                      <td className="px-3 py-3">{item.strategy_model_key === "binance_spot_price" ? "币安现货持仓止盈止损" : item.strategy_model ? <>
+                      <td className="px-3 py-3">{item.strategy_model_key === "binance_spot_pending" ? "1小时已收盘 MACD 死叉" : item.strategy_model_key === "binance_spot_price" ? "手动止盈止损" : item.strategy_model ? <>
                         <Link className="text-blue-700 hover:underline" href={`/strategies#${encodeURIComponent(item.strategy_model.key)}`}>{item.strategy_model.name}</Link>
                         <div className="text-xs text-gray-500">{item.monitor_direction === "buy" ? "买入规则" : "卖出规则"} · 版本 {item.strategy_model.version}</div>
                       </> : <span className="text-gray-500">模型未启用，请删除或重新配置</span>}</td>
                       <td className="px-3 py-3">{item.stop_loss_price || "—"} / {item.take_profit_price || "—"}</td>
                       <td className="px-3 py-3">{item.last_signal_ts ? formatTimestamp(item.last_signal_ts) : "暂无"}
-                        <div className="text-xs text-gray-500">{{ model_daily_ema_hourly_macd: "日线 EMA / 小时 MACD", model_top_rise: "技术信号", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
+                        <div className="text-xs text-gray-500">{{ model_daily_ema_hourly_macd: "日线 EMA / 小时 MACD", model_top_rise: "技术信号", binance_spot_pending: "1小时 MACD 死叉", take_profit: "触及止盈", stop_loss: "触及止损" }[item.last_signal_reason] || ""}</div>
                       </td>
                       <td className="px-3 py-3"><div className="flex justify-end gap-2">
                         <Button size="sm" variant="outline" title={item.actions.edit.reason} disabled={busyId !== null || isAddingSymbol || !item.actions.edit.allowed} onClick={() => editMonitor(item)}>编辑</Button>
@@ -628,12 +548,9 @@ export default function HomePage() {
                             <Button
                               variant={isWatched ? "outline" : "default"}
                               size="sm"
-                              onClick={() => handleAddCandidateSymbol(item.symbol)}
-                              disabled={isWatched || isAddingSymbol}
+                              disabled title="买入监控暂未开放"
                             >
-                              {isWatched
-                                ? "已加入"
-                                : "选择方向"}
+                              买入暂未开放
                             </Button>
                           </td>
                         </tr>
